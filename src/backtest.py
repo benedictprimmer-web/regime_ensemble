@@ -10,8 +10,9 @@ Signal execution rules (daily, no leverage):
 Execution assumption: signal known at close of day T, trade executes at
 open of day T+1. Implemented via signal.shift(1).
 
-No transaction costs, no slippage, no borrow costs for shorts.
-See README limitations for why the reported numbers overstate real performance.
+Transaction cost model: round-trip cost applied on each regime switch.
+    Going long (0 → +1) or exiting (→ 0): cost_bps per switch.
+    Going long/short (+1 → -1): 2 × cost_bps (close long + open short).
 """
 
 import numpy as np
@@ -23,6 +24,7 @@ def run_backtest(
     returns: pd.Series,
     regime: pd.Series,
     allow_short: bool = False,
+    cost_bps: float = 0,
 ) -> pd.DataFrame:
     """
     Run regime-following backtest.
@@ -31,6 +33,7 @@ def run_backtest(
         returns     : daily log returns (named "log_return")
         regime      : regime labels ("momentum" / "reversion" / "mixed")
         allow_short : if True, go short (-1) on reversion days
+        cost_bps    : round-trip transaction cost per switch in basis points
 
     Returns:
         DataFrame with columns:
@@ -47,7 +50,12 @@ def run_backtest(
         signal[reg == "reversion"] = -1.0
 
     # 1-day execution lag: signal at T → position at T+1
-    strategy_ret = (signal.shift(1) * ret).rename("strategy_return")
+    gross_ret = (signal.shift(1) * ret)
+
+    # Transaction costs: proportional to position change magnitude
+    # |Δposition| = 1 for 0↔1, 1 for 0↔-1, 2 for +1↔-1
+    switch_cost = signal.diff().abs() * (cost_bps / 10_000)
+    strategy_ret = (gross_ret - switch_cost.shift(1)).rename("strategy_return")
 
     equity_strat = np.exp(strategy_ret.cumsum()).rename("equity_strategy")
     equity_bnh   = np.exp(ret.cumsum()).rename("equity_bnh")

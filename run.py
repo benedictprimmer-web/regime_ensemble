@@ -11,6 +11,7 @@ Usage:
     python run.py --from 2020-01-01 --to 2025-01-01
     python run.py --short           # allow short on reversion days
     python run.py --skip-bic        # skip BIC model selection (saves ~30s)
+    python run.py --walkforward     # run walk-forward OOS validation (~5 mins)
 
 Outputs (saved to outputs/):
     regime_overview.png   — SPY price coloured by regime + model signals
@@ -30,11 +31,12 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
-from src.data      import fetch_daily_bars, log_returns
-from src.geometric import geometric_signal, straightness_ratio
-from src.markov    import fit_markov3, select_k
-from src.ensemble  import ensemble_score, regime_labels
-from src.backtest  import compute_stats, regime_return_stats, run_backtest
+from src.data        import fetch_daily_bars, log_returns
+from src.geometric   import geometric_signal, straightness_ratio
+from src.markov      import fit_markov3, select_k
+from src.ensemble    import ensemble_score, regime_labels
+from src.backtest    import compute_stats, regime_return_stats, run_backtest
+from src.walkforward import walk_forward
 
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -69,7 +71,7 @@ def plot_regime_overview(
     ax1 = fig.add_subplot(gs[0])
     regime_color = labels.map(COLORS).reindex(prices.index, method="ffill")
     # Drop dates where ensemble label isn't yet available (Markov AR lag)
-    valid = ~regime_color.isna()
+    valid    = ~regime_color.isna()
     prices_v = prices[valid]
     colors_v = regime_color[valid]
     for i in range(len(prices_v) - 1):
@@ -125,14 +127,14 @@ def plot_equity_curves(bt: pd.DataFrame) -> None:
     )
 
     ax1.plot(bt.index, bt["equity_bnh"],      color=COLORS["bnh"],     linewidth=1.5, label="Buy & Hold")
-    ax1.plot(bt.index, bt["equity_strategy"], color=COLORS["strategy"], linewidth=1.5, label="Ensemble Strategy (Long Only)")
+    ax1.plot(bt.index, bt["equity_strategy"], color=COLORS["strategy"], linewidth=1.5, label="Ensemble Strategy (Long Only, 0 bps)")
     ax1.axhline(1.0, color="#bdc3c7", linewidth=0.6, linestyle="--")
     ax1.set_ylabel("Equity (base = 1.0)", fontsize=9)
     ax1.legend(fontsize=9)
     ax1.set_title("Ensemble Strategy vs Buy & Hold", fontsize=11)
     ax1.text(
         0.01, 0.03,
-        "No transaction costs · No slippage · In-sample thresholds — see README limitations",
+        "Zero transaction costs shown — see cost sensitivity table in terminal output",
         transform=ax1.transAxes, fontsize=7, color="#7f8c8d", style="italic",
     )
 
@@ -163,8 +165,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Regime Ensemble Backtest")
     parser.add_argument("--from", dest="from_date", default="2022-01-01", metavar="YYYY-MM-DD")
     parser.add_argument("--to",   dest="to_date",   default="2025-01-01", metavar="YYYY-MM-DD")
-    parser.add_argument("--short",    action="store_true", help="Allow short on reversion days")
-    parser.add_argument("--skip-bic", action="store_true", help="Skip BIC model selection step")
+    parser.add_argument("--short",       action="store_true", help="Allow short on reversion days")
+    parser.add_argument("--skip-bic",    action="store_true", help="Skip BIC model selection step (~60s)")
+    parser.add_argument("--walkforward", action="store_true", help="Run walk-forward OOS validation (~5 mins)")
     args = parser.parse_args()
 
     # ── 1. Data ────────────────────────────────────────────────────────
@@ -196,10 +199,10 @@ def main() -> None:
         n = counts.get(val, 0)
         print(f"  {name:<12s}  {n:4d} days  ({n / len(geo) * 100:.1f}%)")
 
-    # ── 4. Markov k=3 Signal ────────────────────────────────────────────
-    _section("4. MARKOV k=3 SIGNAL  (filtered probabilities)")
+    # ── 4. Markov k=3 Signal ───────────────────────────────────────────
+    _section("4. MARKOV k=3 SIGNAL  (filtered probabilities + transition analysis)")
     print("  Fitting  (~30s)...")
-    mom_prob, crisis_prob, _ = fit_markov3(ret)
+    mom_prob, crisis_prob, _, trans_info = fit_markov3(ret)
 
     # ── 5. Ensemble ────────────────────────────────────────────────────
     _section("5. ENSEMBLE  (mean of geometric + Markov, crisis override at P>0.50)")
@@ -217,14 +220,15 @@ def main() -> None:
     stats_df = regime_return_stats(forward_ret, labels)
     print(stats_df.to_string())
     print("\n  Interpretation guide:  |t| > 2.0, p < 0.05 = statistically significant")
-    print("  The momentum signal is typically significant; reversion is weaker.")
+    print("  Momentum signal is typically significant; reversion is weaker.")
 
-    # ── 7. Backtest ─────────────────────────────────────────────────────
+    # ── 7. Backtest + Cost Sensitivity ────────────────────────────────
     _section("7. BACKTEST RESULTS")
     mode = "Long / Short" if args.short else "Long Only (cash on reversion)"
     print(f"  Mode: {mode}")
     print("  Signal execution: 1-day lag (signal at close T → trade at open T+1)\n")
-    bt   = run_backtest(ret, labels, allow_short=args.short)
+
+    bt   = run_backtest(ret, labels, allow_short=args.short, cost_bps=0)
     perf = compute_stats(bt)
     for strategy_name, metrics in perf.items():
         print(f"  {strategy_name}:")
@@ -232,8 +236,31 @@ def main() -> None:
             print(f"    {k:<12s}  {v}")
         print()
 
-    # ── 8. Charts ──────────────────────────────────────────────────────
-    _section("8. CHARTS")
+    # Cost sensitivity table
+    print("  Transaction cost sensitivity (long-only strategy):")
+    print(f"  {'Cost':>8s}  {'CAGR':>8s}  {'Sharpe':>8s}  {'Max DD':>8s}")
+    for bps in [0, 5, 10, 20]:
+        bt_c   = run_backtest(ret, labels, allow_short=False, cost_bps=bps)
+        perf_c = compute_stats(bt_c)["Strategy (Long Only)"]
+        print(f"  {bps:>6d}bps  {perf_c['CAGR']:>8s}  {perf_c['Sharpe']:>8s}  {perf_c['Max DD']:>8s}")
+
+    # ── 8. Walk-Forward OOS Validation ─────────────────────────────────
+    if args.walkforward:
+        _section("8. WALK-FORWARD OOS VALIDATION  (expanding window, 5 folds × 63 days)")
+        print("  Note: Markov uses expanding-window refit (standard practice).")
+        print("  Geometric thresholds are computed on train-only data (truly OOS).\n")
+        wf_df = walk_forward(ret, n_folds=5, test_size=63)
+        print(wf_df.to_string())
+        pos_folds = (wf_df.loc[(slice(None), "momentum"), "Dir"] == "✓").sum()
+        total     = len(wf_df.loc[(slice(None), "momentum")])
+        print(f"\n  Momentum regime positive in {pos_folds}/{total} folds")
+        print("  (≥ 3/5 is consistent with signal having real predictive power)")
+        charts_section = 9
+    else:
+        charts_section = 8
+
+    # ── Charts ────────────────────────────────────────────────────────
+    _section(f"{charts_section}. CHARTS")
     plot_regime_overview(prices, ret, mom_prob, crisis_prob, labels, args.from_date, args.to_date)
     plot_equity_curves(bt)
 

@@ -68,26 +68,55 @@ Equal weighting is deliberate. Fitting weights to historical returns would const
 
 ---
 
-## Results (SPY 2022–2025, no costs)
+## Results (SPY 2022–2025)
 
-### Forward return by regime (next-day return when regime = X)
+### Markov k=3 regime characteristics
+
+| Regime | Mean return | Vol (ann.) |
+|--------|-------------|------------|
+| MOMENTUM | +0.142%/day | 10% |
+| CHOPPY   | −0.029%/day | 23% |
+| CRISIS   | −0.199%/day | 16% |
+
+### Transition matrix (row = current, col = next regime)
+
+|          | MOMENTUM | CHOPPY | CRISIS |
+|----------|----------|--------|--------|
+| MOMENTUM | 73.6%    | 0.5%   | 25.9%  |
+| CHOPPY   | 0.5%     | 99.5%  | 0.0%   |
+| CRISIS   | 100.0%   | 0.0%   | 0.0%   |
+
+Expected durations: MOMENTUM ~4 days, CHOPPY ~200 days (~9 months). The CHOPPY regime is highly sticky — once in it, the model rarely exits. The CRISIS regime is transient (~1 day expected duration), acting more as a downside flag than a persistent state.
+
+### Forward return by regime (next-day return when ensemble = X)
 
 | Regime | N | Mean %/day | T-stat | P-value |
 |--------|---|-----------|--------|---------|
-| Momentum | ~190 | +0.08% | ~2.1 | ~0.04 ✓ |
-| Mixed | ~280 | +0.03% | ~0.8 | ~0.42 ✗ |
-| Reversion | ~280 | −0.04% | ~0.9 | ~0.38 ✗ |
+| Momentum  | 245 | +0.0906% | 2.13 | 0.034 ✓ |
+| Mixed     | 206 | +0.1228% | 1.62 | 0.108 ✗ |
+| Reversion | 299 | −0.0839% | −1.06 | 0.290 ✗ |
 
-The momentum signal is statistically significant. The reversion signal is not — the model reliably identifies conditions where returns are likely to be positive, but does not reliably identify when they will be negative. This is a common finding in regime detection research.
+The momentum signal is statistically significant (p < 0.05). The reversion signal is not — the model reliably identifies conditions where returns are likely to be positive, but does not reliably identify when they will be negative. This is a common finding; identifying trending conditions is easier than identifying mean-reverting ones.
 
 ### Backtest (long-only, 1-day execution lag)
 
 | Strategy | CAGR | Sharpe | Max Drawdown |
 |----------|------|--------|--------------|
-| Ensemble (long only) | +12–15% | ~0.9 | ~−12% |
-| Buy & Hold | +8.4% | 0.52 | −24.3% |
+| Ensemble (long only) | +7.8% | 1.23 | −4.2% |
+| Buy & Hold | +7.1% | 0.39 | −24.3% |
 
-*Numbers are approximate — re-run `python run.py` for exact results on your data pull.*
+The edge is primarily in **risk reduction** (max DD −4.2% vs −24.3%), not return maximisation. The strategy spends ~40% of the time in cash (reversion/mixed), which caps upside but substantially cuts drawdown.
+
+### Transaction cost sensitivity
+
+| Cost | CAGR | Sharpe | Max DD |
+|------|------|--------|--------|
+| 0 bps | +7.8% | 1.23 | −4.2% |
+| 5 bps | +5.5% | 0.89 | −5.0% |
+| 10 bps | +3.4% | 0.55 | −5.7% |
+| 20 bps | −0.9% | −0.15 | −8.3% |
+
+At realistic round-trip costs (5–10 bps), the Sharpe halves. At 20 bps the strategy is unprofitable. With ~22 regime switches per year, transaction drag is material.
 
 ---
 
@@ -98,8 +127,8 @@ These are not afterthoughts. They are the primary reasons why reported performan
 **1. Short sample (~750 observations)**
 Three years is insufficient to validate across full economic cycles. The 2022–2025 window spans one specific macro transition (low-rates bear → high-rates recovery). Performance in 2008, 2013, or 2020 is untested. Standard practice is 10+ years minimum.
 
-**2. No transaction costs**
-Daily regime switching incurs bid-ask spread and market impact. At even 5bps round-trip cost per switch, strategy returns would decline materially. The number of regime transitions over the sample is ~80–120 days, making cost drag non-trivial.
+**2. Transaction costs are material**
+At 5bps round-trip, Sharpe drops from 1.23 to 0.89. At 10bps, to 0.55. At 20bps, the strategy is unprofitable. With ~22 regime switches per year, costs are not negligible. Run `python run.py --skip-bic` to see the full cost sensitivity table.
 
 **3. In-sample threshold calibration**
 Percentile thresholds (top/bottom 30%) and ensemble cutoffs (0.65/0.35) were determined by observing the full dataset. In production these require expanding-window estimation — at time T, you can only use data up to T.
@@ -140,7 +169,10 @@ python run.py --from 2020-01-01 --to 2025-01-01
 # Skip BIC model selection (saves ~30s, uses k=3 directly)
 python run.py --skip-bic
 
-# Allow short on reversion days (see limitations)
+# Walk-forward OOS validation (~5 mins, 5 folds × 63 days)
+python run.py --skip-bic --walkforward
+
+# Allow short on reversion days (see limitations — signal is weak)
 python run.py --short
 ```
 
@@ -154,13 +186,14 @@ Outputs saved to `outputs/`:
 
 ```
 regime-ensemble/
-├── run.py              — entry point
+├── run.py               — entry point
 ├── src/
-│   ├── data.py         — Polygon fetcher, CSV cache
-│   ├── geometric.py    — straightness ratio, adaptive thresholds
-│   ├── markov.py       — Markov k=3, BIC selection, filtered probabilities
-│   ├── ensemble.py     — combine signals, crisis override
-│   └── backtest.py     — backtest engine, performance statistics
-├── data/cache/         — cached CSV files (gitignored)
-└── outputs/            — saved charts (gitignored)
+│   ├── data.py          — Polygon fetcher, CSV cache
+│   ├── geometric.py     — straightness ratio, adaptive thresholds
+│   ├── markov.py        — Markov k=3, BIC selection, filtered probabilities, transition matrix
+│   ├── ensemble.py      — combine signals, crisis override
+│   ├── backtest.py      — backtest engine, cost sensitivity, performance statistics
+│   └── walkforward.py   — walk-forward OOS validation
+├── data/cache/          — cached CSV files (gitignored)
+└── outputs/             — saved charts (gitignored)
 ```
