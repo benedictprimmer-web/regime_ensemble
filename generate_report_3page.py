@@ -53,8 +53,8 @@ def _section_title(ax, text):
             fontsize=10, fontweight="bold", color=C["text"], va="bottom")
 
 
-def _caption(ax, text):
-    ax.text(0.5, -0.14, text, transform=ax.transAxes,
+def _caption(ax, text, y=-0.16):
+    ax.text(0.5, y, text, transform=ax.transAxes,
             fontsize=7.5, color=C["subtext"], ha="center", style="italic")
 
 
@@ -166,7 +166,8 @@ def make_page1():
     _section_title(ax4, "Detector 2 — Markov (hidden state)")
     _caption(ax4,
              "A statistical model that learns 3 hidden market states from return patterns.\n"
-             "Identifies crisis conditions and suppresses buy signals automatically.")
+             "Identifies crisis conditions and suppresses buy signals automatically.",
+             y=-0.32)
 
     # ── Panel 5: Headline results ──────────────────────────────────────────
     ax5 = fig.add_subplot(gs[2, :])
@@ -300,8 +301,8 @@ def make_page2():
 
 def make_page3():
     fig = plt.figure(figsize=(8.27, 11.69), facecolor="white")
-    fig.subplots_adjust(left=0.09, right=0.95, top=0.92, bottom=0.06,
-                        hspace=0.65, wspace=0.38)
+    fig.subplots_adjust(left=0.09, right=0.95, top=0.92, bottom=0.07,
+                        hspace=0.90, wspace=0.38)
 
     fig.text(0.5, 0.96, "Results & Limitations",
              ha="center", fontsize=14, fontweight="bold", color=C["text"])
@@ -312,7 +313,7 @@ def make_page3():
                                transform=fig.transFigure, color="#dde", lw=1))
 
     gs = gridspec.GridSpec(3, 2, figure=fig, left=0.09, right=0.95,
-                           top=0.92, bottom=0.06, hspace=0.65, wspace=0.38)
+                           top=0.92, bottom=0.06, hspace=0.90, wspace=0.38)
 
     # ── Panel 1: Equity curves ─────────────────────────────────────────────
     ax1 = fig.add_subplot(gs[0, :])
@@ -343,7 +344,7 @@ def make_page3():
     ax2.spines[["top", "right"]].set_visible(False)
     ax2.tick_params(axis="x", labelsize=7)
     _section_title(ax2, "Drawdown Comparison")
-    _caption(ax2, "Strategy avoids most of the 2022 bear market.\nMax drawdown cut from −24.3% to −4.2%.")
+    _caption(ax2, "Strategy avoids most of the 2022 bear market.\nMax drawdown cut from −24.3% to −4.2%.", y=-0.30)
 
     # ── Panel 3: Transaction cost sensitivity ─────────────────────────────
     ax3 = fig.add_subplot(gs[1, 1])
@@ -368,7 +369,7 @@ def make_page3():
     ax3.spines[["top", "right"]].set_visible(False)
     ax3.tick_params(labelsize=8)
     _section_title(ax3, "Transaction Cost Sensitivity")
-    _caption(ax3, "~22 regime switches/year means costs add up fast.\nAt 20bps round-trip, strategy is unprofitable.")
+    _caption(ax3, "~22 regime switches/year means costs add up fast.\nAt 20bps round-trip, strategy is unprofitable.", y=-0.32)
 
     # ── Panel 4: Limitations ──────────────────────────────────────────────
     ax4 = fig.add_subplot(gs[2, :])
