@@ -2,20 +2,21 @@
 """
 Regime Ensemble Backtest
 ========================
-SPY daily regime detection using a two-model ensemble:
+Daily regime detection using a two-model ensemble:
     1. Geometric (straightness ratio, adaptive percentile thresholds)
     2. Markov Switching AR(1), k=3 selected by BIC (ΔBIC=82 over k=2)
 
 Usage:
     python run.py
-    python run.py --from 2020-01-01 --to 2025-01-01
+    python run.py --ticker QQQ --from 2000-01-01 --to 2025-01-01
+    python run.py --fetch-vix       # also fetch VIX (I:VIX) from Polygon
     python run.py --short           # allow short on reversion days
     python run.py --skip-bic        # skip BIC model selection (saves ~30s)
     python run.py --walkforward     # run walk-forward OOS validation (~5 mins)
 
 Outputs (saved to outputs/):
-    regime_overview.png   — SPY price coloured by regime + model signals
-    equity_curves.png     — strategy vs buy-and-hold + drawdown
+    {ticker}_{from_year}_{to_year}_regime_overview.png
+    {ticker}_{from_year}_{to_year}_equity_curves.png
 """
 
 import argparse
@@ -31,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
-from src.data        import fetch_daily_bars, log_returns
+from src.data        import fetch_daily_bars, log_returns, fetch_multi, vix_levels
 from src.geometric   import geometric_signal, straightness_ratio
 from src.markov      import fit_markov3, select_k
 from src.ensemble    import ensemble_score, regime_labels
@@ -61,6 +62,8 @@ def plot_regime_overview(
     labels: pd.Series,
     from_date: str,
     to_date: str,
+    ticker: str = "SPY",
+    run_prefix: str = "SPY",
 ) -> None:
     ratio = straightness_ratio(returns)
 
@@ -84,10 +87,10 @@ def plot_regime_overview(
         )
     patches = [mpatches.Patch(color=COLORS[r], label=r.title()) for r in ["momentum", "reversion", "mixed"]]
     ax1.legend(handles=patches, loc="upper left", fontsize=8, framealpha=0.7)
-    ax1.set_ylabel("SPY Close", fontsize=9)
+    ax1.set_ylabel(f"{ticker} Close", fontsize=9)
     ax1.set_xticks([])
     ax1.set_title(
-        f"Regime Ensemble — SPY {from_date[:4]}–{to_date[:4]}  "
+        f"Regime Ensemble — {ticker} {from_date[:4]}–{to_date[:4]}  "
         f"(Geometric + Markov k=3)",
         fontsize=11,
         pad=8,
@@ -113,13 +116,13 @@ def plot_regime_overview(
     ax3.tick_params(axis="x", labelsize=8)
 
     fig.autofmt_xdate(rotation=30, ha="right")
-    path = OUTPUT_DIR / "regime_overview.png"
+    path = OUTPUT_DIR / f"{run_prefix}_regime_overview.png"
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved → {path}")
 
 
-def plot_equity_curves(bt: pd.DataFrame) -> None:
+def plot_equity_curves(bt: pd.DataFrame, run_prefix: str = "SPY") -> None:
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(12, 8),
         gridspec_kw={"height_ratios": [3, 1]},
@@ -148,7 +151,7 @@ def plot_equity_curves(bt: pd.DataFrame) -> None:
 
     fig.autofmt_xdate(rotation=30, ha="right")
     fig.tight_layout()
-    path = OUTPUT_DIR / "equity_curves.png"
+    path = OUTPUT_DIR / f"{run_prefix}_equity_curves.png"
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved → {path}")
@@ -163,20 +166,30 @@ def _section(title: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Regime Ensemble Backtest")
-    parser.add_argument("--from", dest="from_date", default="2022-01-01", metavar="YYYY-MM-DD")
-    parser.add_argument("--to",   dest="to_date",   default="2025-01-01", metavar="YYYY-MM-DD")
+    parser.add_argument("--ticker",  default="SPY",        metavar="TICKER",    help="Equity ticker (default: SPY)")
+    parser.add_argument("--from",    dest="from_date",     default="2000-01-01", metavar="YYYY-MM-DD")
+    parser.add_argument("--to",      dest="to_date",       default="2025-01-01", metavar="YYYY-MM-DD")
+    parser.add_argument("--fetch-vix",   action="store_true", help="Fetch VIX (I:VIX) from Polygon alongside primary ticker")
     parser.add_argument("--short",       action="store_true", help="Allow short on reversion days")
     parser.add_argument("--skip-bic",    action="store_true", help="Skip BIC model selection step (~60s)")
     parser.add_argument("--walkforward", action="store_true", help="Run walk-forward OOS validation (~5 mins)")
     args = parser.parse_args()
 
+    run_prefix = f"{args.ticker}_{args.from_date[:4]}_{args.to_date[:4]}"
+
     # ── 1. Data ────────────────────────────────────────────────────────
     _section("1. DATA")
-    print(f"  Fetching SPY  {args.from_date} → {args.to_date}")
-    df     = fetch_daily_bars("SPY", args.from_date, args.to_date)
+    print(f"  Fetching {args.ticker}  {args.from_date} → {args.to_date}")
+    df     = fetch_daily_bars(args.ticker, args.from_date, args.to_date)
     ret    = log_returns(df)
     prices = df["close"]
     print(f"  {len(df)} trading days loaded")
+
+    if args.fetch_vix:
+        print(f"  Fetching VIX (I:VIX)  {args.from_date} → {args.to_date}")
+        vix_df = fetch_daily_bars("I:VIX", args.from_date, args.to_date)
+        vix    = vix_levels(vix_df)
+        print(f"  VIX: {len(vix_df)} days loaded  (range: {vix.min():.1f} – {vix.max():.1f})")
 
     # ── 2. BIC Model Selection ─────────────────────────────────────────
     if not args.skip_bic:
@@ -246,9 +259,9 @@ def main() -> None:
 
     # ── 8. Walk-Forward OOS Validation ─────────────────────────────────
     if args.walkforward:
-        _section("8. WALK-FORWARD OOS VALIDATION  (expanding window, 5 folds × 63 days)")
-        print("  Note: Markov uses expanding-window refit (standard practice).")
-        print("  Geometric thresholds are computed on train-only data (truly OOS).\n")
+        _section("8. WALK-FORWARD OOS VALIDATION  (5 folds × 63 days, fully OOS)")
+        print("  Geometric: thresholds from train slice only.")
+        print("  Markov: fitted on train, forward-filtered on test (no EM on test data).\n")
         wf_df = walk_forward(ret, n_folds=5, test_size=63)
         print(wf_df.to_string())
         pos_folds = (wf_df.loc[(slice(None), "momentum"), "Dir"] == "✓").sum()
@@ -261,8 +274,9 @@ def main() -> None:
 
     # ── Charts ────────────────────────────────────────────────────────
     _section(f"{charts_section}. CHARTS")
-    plot_regime_overview(prices, ret, mom_prob, crisis_prob, labels, args.from_date, args.to_date)
-    plot_equity_curves(bt)
+    plot_regime_overview(prices, ret, mom_prob, crisis_prob, labels,
+                         args.from_date, args.to_date, ticker=args.ticker, run_prefix=run_prefix)
+    plot_equity_curves(bt, run_prefix=run_prefix)
 
     print("\n  Complete. Charts saved to outputs/\n")
 

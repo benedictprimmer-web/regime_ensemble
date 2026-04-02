@@ -16,8 +16,10 @@ Fixed thresholds (e.g. ratio > 0.7) break at longer windows where noise
 accumulates and the ratio rarely exceeds 0.5 even in genuine trends.
 Adaptive thresholds are robust to window length and volatility regime.
 
-Caveat: quantiles are computed on the full in-sample history, which
-constitutes mild look-ahead. In production, use an expanding window.
+When `mom_thresh`/`rev_thresh` are supplied to `geometric_signal()` from
+a training slice via `compute_thresholds()`, there is no look-ahead.
+For the full in-sample run (run.py), thresholds are computed on the full
+history — this is fine for the in-sample backtest but not for walk-forward.
 """
 
 import numpy as np
@@ -41,11 +43,32 @@ def straightness_ratio(returns: pd.Series, window: int = WINDOW) -> pd.Series:
     return ratio.rename("straightness")
 
 
-def geometric_signal(
+def compute_thresholds(
     returns: pd.Series,
-    window: int       = WINDOW,
+    window: int          = WINDOW,
     momentum_pct: float  = MOMENTUM_PCT,
     reversion_pct: float = REVERSION_PCT,
+) -> tuple:
+    """
+    Compute straightness ratio percentile thresholds from a data slice.
+
+    Call this on the training slice, then pass the results to
+    `geometric_signal()` to avoid look-ahead bias in walk-forward validation.
+
+    Returns:
+        (mom_thresh, rev_thresh) — float pair
+    """
+    ratio = straightness_ratio(returns, window)
+    return ratio.quantile(momentum_pct / 100), ratio.quantile(reversion_pct / 100)
+
+
+def geometric_signal(
+    returns: pd.Series,
+    window: int          = WINDOW,
+    momentum_pct: float  = MOMENTUM_PCT,
+    reversion_pct: float = REVERSION_PCT,
+    mom_thresh: float    = None,
+    rev_thresh: float    = None,
 ) -> pd.Series:
     """
     Geometric regime signal as a 0/0.5/1 float.
@@ -54,12 +77,18 @@ def geometric_signal(
         0.5  mixed
         0.0  reversion (bottom reversion_pct% of ratio distribution)
 
+    Pass `mom_thresh` and `rev_thresh` (from `compute_thresholds()` on a
+    training slice) to avoid look-ahead bias in walk-forward validation.
+    When omitted, thresholds are computed on the full `returns` series.
+
     Returns:
         Series aligned to returns.index.
     """
-    ratio      = straightness_ratio(returns, window)
-    mom_thresh = ratio.quantile(momentum_pct  / 100)
-    rev_thresh = ratio.quantile(reversion_pct / 100)
+    ratio = straightness_ratio(returns, window)
+    if mom_thresh is None:
+        mom_thresh = ratio.quantile(momentum_pct / 100)
+    if rev_thresh is None:
+        rev_thresh = ratio.quantile(reversion_pct / 100)
 
     signal = pd.Series(0.5, index=returns.index, name="geo_signal")
     signal[ratio >= mom_thresh] = 1.0

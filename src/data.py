@@ -33,14 +33,23 @@ def _get_client() -> RESTClient:
     return _client
 
 
+def _safe_cache_name(ticker: str, from_date: str, to_date: str) -> str:
+    """Return a filesystem-safe cache filename (replaces ':' for index tickers like I:VIX)."""
+    safe_ticker = ticker.replace(":", "_")
+    return f"{safe_ticker}_{from_date}_{to_date}.csv"
+
+
 def fetch_daily_bars(ticker: str, from_date: str, to_date: str) -> pd.DataFrame:
     """
     Fetch adjusted daily OHLCV bars for a ticker.
 
+    Supports equity tickers (SPY, QQQ, IWM) and Polygon index tickers
+    (e.g. I:VIX). For indices, volume will be zero/null — this is expected.
+
     Returns:
         DataFrame with DatetimeIndex and columns: open, high, low, close, volume
     """
-    cache_path = CACHE_DIR / f"{ticker}_{from_date}_{to_date}.csv"
+    cache_path = CACHE_DIR / _safe_cache_name(ticker, from_date, to_date)
     if cache_path.exists():
         return pd.read_csv(cache_path, index_col="date", parse_dates=True)
 
@@ -74,3 +83,23 @@ def fetch_daily_bars(ticker: str, from_date: str, to_date: str) -> pd.DataFrame:
 def log_returns(df: pd.DataFrame) -> pd.Series:
     """Daily log returns from a bars DataFrame."""
     return np.log(df["close"] / df["close"].shift(1)).dropna().rename("log_return")
+
+
+def fetch_multi(tickers: list, from_date: str, to_date: str) -> dict:
+    """
+    Fetch daily bars for multiple tickers.
+
+    Returns:
+        dict mapping ticker → DataFrame (same format as fetch_daily_bars)
+    """
+    return {t: fetch_daily_bars(t, from_date, to_date) for t in tickers}
+
+
+def vix_levels(df: pd.DataFrame) -> pd.Series:
+    """
+    VIX daily close levels from a bars DataFrame.
+
+    VIX is a level, not a return instrument — use this instead of log_returns()
+    when working with I:VIX data.
+    """
+    return df["close"].rename("vix")

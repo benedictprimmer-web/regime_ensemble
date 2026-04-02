@@ -5,13 +5,14 @@ Splits the data into N rolling folds. For each fold:
     - Train: all data up to the start of the test window
     - Test:  next `test_size` trading days (held out)
 
-Geometric signal: thresholds computed on train only, applied to test.
-Markov signal:    fit on the expanding train window, filtered probabilities
-                  evaluated on the full train+test window — only the test
-                  portion is scored. This is expanding-window, not strictly
-                  OOS (statsmodels does not support applying a pre-fitted
-                  Markov model to new data without refitting). This is
-                  explicitly flagged in the output.
+Geometric signal: thresholds computed on train only via `compute_thresholds()`,
+                  then applied to the test slice — fully OOS.
+
+Markov signal:    fit on train-only data, then forward-filtered on the test
+                  slice using `.filter(res_train.params)` (statsmodels 0.14+).
+                  This freezes the EM-estimated parameters at train time and
+                  applies only the Hamilton filter to the test observations —
+                  fully OOS with no look-ahead bias.
 
 Interpretation:
     If the signal has real predictive power, the momentum regime should
@@ -25,7 +26,7 @@ import pandas as pd
 from scipy import stats
 import statsmodels.api as sm
 
-from src.geometric import straightness_ratio, geometric_signal
+from src.geometric import straightness_ratio, geometric_signal, compute_thresholds
 from src.ensemble  import ensemble_score, regime_labels
 from src.markov    import AR_ORDER
 
@@ -70,49 +71,51 @@ def walk_forward(
               f"({len(test_ret)} days)")
 
         # ── Geometric: OOS thresholds from train ──────────────────────
-        sr_train   = straightness_ratio(train_ret)
-        mom_thresh = sr_train.quantile(0.70)
-        rev_thresh = sr_train.quantile(0.30)
+        mom_thresh, rev_thresh = compute_thresholds(train_ret)
+        geo_test = geometric_signal(test_ret, mom_thresh=mom_thresh, rev_thresh=rev_thresh)
 
-        sr_test  = straightness_ratio(test_ret)
-        geo_test = pd.Series(0.5, index=test_ret.index, name="geo_signal")
-        geo_test[sr_test >= mom_thresh] = 1.0
-        geo_test[sr_test <= rev_thresh] = 0.0
-
-        # ── Markov: expanding-window refit, evaluate on test only ──────
-        # Fit on full train+test window, extract only the test portion.
-        # Expanding-window approach: each fold's model sees slightly more data.
-        # Not strictly OOS but standard in practice for HMM-type models.
-        full_window = returns.iloc[:test_end]
+        # ── Markov: train-only fit, forward-filter on test ─────────────
+        # Fit the Markov model on train data only. Then construct a new
+        # model instance over the test slice and call .filter(train_params)
+        # to run the Hamilton filter with frozen parameters — no EM on test.
         try:
-            model = sm.tsa.MarkovAutoregression(
-                full_window.dropna(),
+            model_train = sm.tsa.MarkovAutoregression(
+                train_ret.dropna(),
                 k_regimes=3,
                 order=AR_ORDER,
                 switching_ar=True,
                 switching_variance=True,
             )
-            res = model.fit(disp=False)
+            res_train = model_train.fit(disp=False)
 
-            consts     = [res.params.get(f"const[{i}]", 0) for i in range(3)]
+            consts     = [res_train.params.get(f"const[{i}]", 0) for i in range(3)]
             mom_idx    = int(np.argmax(consts))
             crisis_idx = int(np.argmin(consts))
 
-            filt = res.filtered_marginal_probabilities
+            # Forward-filter test slice with frozen train parameters
+            model_test = sm.tsa.MarkovAutoregression(
+                test_ret.dropna(),
+                k_regimes=3,
+                order=AR_ORDER,
+                switching_ar=True,
+                switching_variance=True,
+            )
+            res_test = model_test.filter(res_train.params)
+
+            filt = res_test.filtered_marginal_probabilities
             if hasattr(filt, "iloc"):
-                all_idx = filt.index
-                probs   = filt.values
+                test_idx = filt.index
+                probs    = filt.values
             else:
-                probs   = np.array(filt)
-                ret_arr = full_window.dropna()
-                all_idx = ret_arr.index[len(ret_arr) - len(probs):]
+                probs    = np.array(filt)
+                ret_arr  = test_ret.dropna()
+                test_idx = ret_arr.index[len(ret_arr) - len(probs):]
 
-            all_mom    = pd.Series(probs[:, mom_idx],    index=all_idx)
-            all_crisis = pd.Series(probs[:, crisis_idx], index=all_idx)
+            mom_prob_test    = pd.Series(probs[:, mom_idx],    index=test_idx)
+            crisis_prob_test = pd.Series(probs[:, crisis_idx], index=test_idx)
 
-            # Take only the test portion
-            mom_prob_test    = all_mom.reindex(test_ret.index)
-            crisis_prob_test = all_crisis.reindex(test_ret.index)
+            mom_prob_test    = mom_prob_test.reindex(test_ret.index)
+            crisis_prob_test = crisis_prob_test.reindex(test_ret.index)
 
         except Exception as e:
             print(f"    Markov fit failed: {e} — using geometric only")
