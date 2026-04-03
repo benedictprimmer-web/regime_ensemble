@@ -243,7 +243,7 @@ def main() -> None:
 
     # ── 7. Backtest + Cost Sensitivity ────────────────────────────────
     _section("7. BACKTEST RESULTS")
-    mode = "Long / Short" if args.short else "Long Only (cash on reversion)"
+    mode = "Long / Short" if args.short else "Long on momentum (+1), half-long on mixed (+0.5), cash on reversion"
     print(f"  Mode: {mode}")
     print("  Signal execution: 1-day lag (signal at close T → trade at open T+1)\n")
 

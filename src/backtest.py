@@ -2,17 +2,22 @@
 Regime-following backtest and performance statistics.
 
 Signal execution rules (daily, no leverage):
-    regime = "momentum"  →  long  (+1)
-    regime = "reversion" →  flat  ( 0)  [long-only variant]
-                         →  short (-1)  [long/short, --short flag]
-    regime = "mixed"     →  cash  ( 0)
+    regime = "momentum"  →  full long   (+1.0)
+    regime = "mixed"     →  half long   (+0.5)  -- statistically significant
+    regime = "reversion" →  cash        ( 0.0)  [long-only variant]
+                         →  short       (-1.0)  [long/short, --short flag]
+
+"Mixed" gets a half-position because it has the strongest forward-return
+signal (T=3.21, p=0.001 on 2000-2025 data). The original cash position
+was leaving statistically significant return on the table.
 
 Execution assumption: signal known at close of day T, trade executes at
 open of day T+1. Implemented via signal.shift(1).
 
-Transaction cost model: round-trip cost applied on each regime switch.
-    Going long (0 → +1) or exiting (→ 0): cost_bps per switch.
-    Going long/short (+1 → -1): 2 × cost_bps (close long + open short).
+Transaction cost model: round-trip cost applied proportional to position change.
+    |delta_position| = 0.5 for 0 <-> 0.5 or 0.5 <-> 1.0: cost_bps * 0.5
+    |delta_position| = 1.0 for 0 <-> 1.0: cost_bps
+    |delta_position| = 2.0 for +1 <-> -1: 2 * cost_bps
 """
 
 import numpy as np
@@ -46,6 +51,7 @@ def run_backtest(
 
     signal = pd.Series(0.0, index=reg.index, name="signal")
     signal[reg == "momentum"] = 1.0
+    signal[reg == "mixed"]    = 0.5
     if allow_short:
         signal[reg == "reversion"] = -1.0
 

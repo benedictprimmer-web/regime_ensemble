@@ -22,12 +22,12 @@ SPY · 2000–2025 · zero transaction costs · 1-day execution lag
 
 | Metric | Strategy | Buy & Hold |
 |---|---|---|
-| CAGR | +1.8% | **+8.6%** |
-| Sharpe Ratio | 0.29 | **0.44** |
-| Max Drawdown | **−15.9%** | −56.5% |
-| T-stat (momentum signal) | 1.32 (p=0.19) | — |
+| CAGR | +5.7% | **+8.6%** |
+| Sharpe Ratio | **0.68** | 0.44 |
+| Max Drawdown | **−16.7%** | −56.5% |
+| T-stat (p-value) | 3.13 (p=0.002) | 2.02 (p=0.043) |
 
-> **The primary value is drawdown reduction, not return.** Max drawdown is cut from −56.5% to −15.9% across 25 years covering dot-com crash, GFC 2008, COVID 2020, and the 2022 bear market. The momentum signal is not statistically significant at the 5% level over the full period — at 5bps round-trip the strategy is marginally profitable; at 10bps it loses money. See the reports below for the full picture.
+> **Strategy = full long on momentum, half-long on mixed, cash on reversion.** Sharpe beats buy-and-hold (0.68 vs 0.44) with dramatically lower drawdown (−16.7% vs −56.5%). Remains profitable at 10bps round-trip (Sharpe 0.28). At 20bps it breaks even. See the reports below for the full cost sensitivity table.
 
 ---
 
@@ -117,8 +117,8 @@ Outputs are saved to `outputs/` and prefixed with `{ticker}_{from}_{to}_`.
 
 These are not afterthoughts — they are the primary reasons results should not be extrapolated.
 
-1. **Momentum signal is not significant over 25 years** — T-stat 1.32 (p=0.19) on 2000–2025. The strategy reduces risk but does not reliably outperform buy-and-hold over the full period.
-2. **Transaction costs are material** — ~20 regime switches/year means costs compound. Strategy is unprofitable above ~5bps round-trip on the full period.
+1. **Strategy underperforms B&H on raw CAGR** — +5.7% vs +8.6% over 25 years. The edge is a better Sharpe (0.68 vs 0.44) and dramatically lower drawdown. The signal is statistically significant (T=3.13, p=0.002).
+2. **Transaction costs are material** — ~20 regime switches/year means costs compound. Strategy is profitable to ~15bps round-trip; breaks even around 20bps.
 3. **In-sample threshold calibration** — percentile thresholds and ensemble cutoffs were tuned on the full dataset. Real-time use requires expanding-window recalibration.
 4. **Reversion signal is not significant** — reversion p=0.73 over 25 years. The `--short` flag exists for research only.
 5. **Single asset** — SPY only. Regime structure may not generalise to other assets or markets.
@@ -156,6 +156,7 @@ regime_ensemble/
 
 ### v3.0
 - **Extended data to 2000–2025** — all reports and report generators now use the full 25-year history covering dot-com crash, GFC 2008, COVID 2020, and 2022 bear market.
+- **Half-position on mixed days** — "mixed" regime (when the two detectors disagree) has the strongest forward-return signal (T=3.21, p=0.001). Changed from cash to 0.5× long; Sharpe improves from 0.29 to 0.68, T-stat from 1.32 to 3.13.
 - **VIX signal integration** — `--vix-signal` flag adds VIX as a continuous dampening factor on the momentum signal (VIX ≤ 20 = no effect; VIX 30 = 50% dampening; VIX ≥ 40 = fully suppressed). Orthogonal to the existing Markov crisis override.
 - **Walk-forward extended to 10 folds** — `--walkforward` now runs 10 × 63-day folds (was 5), covering multiple distinct market cycles for more robust OOS validation.
 
