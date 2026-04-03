@@ -25,20 +25,51 @@ import pandas as pd
 from scipy import stats
 
 
+def _apply_persistence_filter(regime: pd.Series, min_hold_days: int) -> pd.Series:
+    """
+    Require a regime to hold for min_hold_days consecutive days before
+    the position switches. Reduces whipsawing and transaction costs.
+
+    Example (min_hold_days=3):
+        raw:      mom mom rev rev rev mom mom ...
+        filtered: mom mom mom mom rev rev rev ...
+                              ^^^--- switch delayed until 3rd consecutive day
+    """
+    filtered = regime.copy()
+    held = regime.iloc[0]
+    candidate = regime.iloc[0]
+    streak = 1
+    for i in range(1, len(regime)):
+        sig = regime.iloc[i]
+        if sig == candidate:
+            streak += 1
+        else:
+            candidate = sig
+            streak = 1
+        if streak >= min_hold_days:
+            held = candidate
+        filtered.iloc[i] = held
+    return filtered
+
+
 def run_backtest(
     returns: pd.Series,
     regime: pd.Series,
     allow_short: bool = False,
     cost_bps: float = 0,
+    min_hold_days: int = 1,
 ) -> pd.DataFrame:
     """
     Run regime-following backtest.
 
     Args:
-        returns     : daily log returns (named "log_return")
-        regime      : regime labels ("momentum" / "reversion" / "mixed")
-        allow_short : if True, go short (-1) on reversion days
-        cost_bps    : round-trip transaction cost per switch in basis points
+        returns       : daily log returns (named "log_return")
+        regime        : regime labels ("momentum" / "reversion" / "mixed")
+        allow_short   : if True, go short (-1) on reversion days
+        cost_bps      : round-trip transaction cost per switch in basis points
+        min_hold_days : persistence filter -- regime must hold this many
+                        consecutive days before position changes (default=1,
+                        i.e. no filtering). Use 3-5 to reduce turnover.
 
     Returns:
         DataFrame with columns:
@@ -48,6 +79,9 @@ def run_backtest(
     aligned = pd.concat([returns, regime], axis=1).dropna()
     ret = aligned["log_return"]
     reg = aligned["regime"]
+
+    if min_hold_days > 1:
+        reg = _apply_persistence_filter(reg, min_hold_days)
 
     signal = pd.Series(0.0, index=reg.index, name="signal")
     signal[reg == "momentum"] = 1.0

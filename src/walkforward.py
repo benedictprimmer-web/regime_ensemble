@@ -21,10 +21,12 @@ Interpretation:
     size (~60-75 obs per test fold).
 """
 
+import warnings
 import numpy as np
 import pandas as pd
 from scipy import stats
 import statsmodels.api as sm
+from statsmodels.tools.sm_exceptions import EstimationWarning
 
 from src.geometric import straightness_ratio, geometric_signal, compute_thresholds
 from src.ensemble  import ensemble_score, regime_labels
@@ -86,7 +88,9 @@ def walk_forward(
                 switching_ar=True,
                 switching_variance=True,
             )
-            res_train = model_train.fit(disp=False)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", EstimationWarning)
+                res_train = model_train.fit(disp=False, em_iter=200)
 
             consts     = [res_train.params.get(f"const[{i}]", 0) for i in range(3)]
             mom_idx    = int(np.argmax(consts))

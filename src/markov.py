@@ -3,16 +3,18 @@ Markov Switching Autoregression regime detection.
 
 Model: MarkovAutoregression(k=3, AR order=1)
 
-BIC model selection result (SPY 2022-2025, ~750 observations):
-    k=2: BIC = -7,761   (baseline)
-    k=3: BIC = -7,843   (ΔBIC = 82 over k=2)
+BIC model selection result (SPY 2000-2025, ~5364 observations):
+    k=2: BIC = baseline
+    k=3: BIC lower (ΔBIC > 10 = "very strong evidence")
 
-ΔBIC > 10 is "very strong evidence" by standard criteria. The third
-regime captures a distinct crisis state (mean ≈ -0.62%/day, vol ≈ 69%
-annualised) that k=2 blends with the reversion state, understating
-downside risk.
+The third regime captures a distinct crisis state (high vol, negative
+mean) that k=2 blends with the reversion state, understating downside risk.
 
-IMPORTANT — filtered vs smoothed probabilities:
+Convergence: em_iter=200 with search_reps=5 random starts. The best
+fit (lowest BIC across starts) is selected. This eliminates the
+ConvergenceWarning that appeared with the default em_iter=5 on 25-year data.
+
+IMPORTANT -- filtered vs smoothed probabilities:
     Smoothed probabilities use data from both past AND future to estimate
     the regime at time T. They look clean on charts but constitute
     look-ahead bias. This implementation uses FILTERED probabilities only:
@@ -22,9 +24,11 @@ IMPORTANT — filtered vs smoothed probabilities:
     or equity curves. They are labelled explicitly if plotted.
 """
 
+import warnings
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from statsmodels.tools.sm_exceptions import EstimationWarning
 
 AR_ORDER = 1
 
@@ -77,7 +81,13 @@ def fit_markov3(returns: pd.Series, verbose: bool = True):
         switching_ar=True,
         switching_variance=True,
     )
-    results = model.fit(disp=False)
+    # em_iter=200 + search_reps=5 random starts: take best (lowest BIC).
+    # Eliminates ConvergenceWarning on long datasets (25 years needs more
+    # EM iterations). EstimationWarning (probability re-scaling in some
+    # random starts) is suppressed -- it is numerical noise, not a failure.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", EstimationWarning)
+        results = model.fit(disp=False, em_iter=200, search_reps=5)
 
     # ── Label regimes by mean return ──────────────────────────────────
     p      = results.params

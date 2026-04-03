@@ -172,6 +172,8 @@ def main() -> None:
     parser.add_argument("--fetch-vix",   action="store_true", help="Fetch VIX (I:VIX) from Polygon alongside primary ticker")
     parser.add_argument("--vix-signal",  action="store_true", help="Use VIX as dampening factor in ensemble (requires cached VIX data)")
     parser.add_argument("--short",       action="store_true", help="Allow short on reversion days")
+    parser.add_argument("--min-hold",    dest="min_hold", type=int, default=1, metavar="N",
+                        help="Persistence filter: require N consecutive days in regime before switching (default: 1 = off)")
     parser.add_argument("--skip-bic",    action="store_true", help="Skip BIC model selection step (~60s)")
     parser.add_argument("--walkforward", action="store_true", help="Run walk-forward OOS validation (~5 mins)")
     args = parser.parse_args()
@@ -245,9 +247,11 @@ def main() -> None:
     _section("7. BACKTEST RESULTS")
     mode = "Long / Short" if args.short else "Long on momentum (+1), half-long on mixed (+0.5), cash on reversion"
     print(f"  Mode: {mode}")
+    if args.min_hold > 1:
+        print(f"  Persistence filter: {args.min_hold} consecutive days required before regime switch")
     print("  Signal execution: 1-day lag (signal at close T → trade at open T+1)\n")
 
-    bt   = run_backtest(ret, labels, allow_short=args.short, cost_bps=0)
+    bt   = run_backtest(ret, labels, allow_short=args.short, cost_bps=0, min_hold_days=args.min_hold)
     perf = compute_stats(bt)
     for strategy_name, metrics in perf.items():
         print(f"  {strategy_name}:")
@@ -259,7 +263,7 @@ def main() -> None:
     print("  Transaction cost sensitivity (long-only strategy):")
     print(f"  {'Cost':>8s}  {'CAGR':>8s}  {'Sharpe':>8s}  {'Max DD':>8s}")
     for bps in [0, 5, 10, 20]:
-        bt_c   = run_backtest(ret, labels, allow_short=False, cost_bps=bps)
+        bt_c   = run_backtest(ret, labels, allow_short=False, cost_bps=bps, min_hold_days=args.min_hold)
         perf_c = compute_stats(bt_c)["Strategy (Long Only)"]
         print(f"  {bps:>6d}bps  {perf_c['CAGR']:>8s}  {perf_c['Sharpe']:>8s}  {perf_c['Max DD']:>8s}")
 
