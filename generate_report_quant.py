@@ -393,31 +393,43 @@ def make_page2():
     _title(ax2, "Rolling 63-day Information Coefficient",
            sub="IC = corr(ensemble_score[t], return[t+1])")
 
-    # Panel 3: Cumulative return decomposition (3-regime)
+    # Panel 3: Cumulative strategy return decomposition by regime.
+    # Uses forward (next-day) returns to match the 1-day execution lag in
+    # run_backtest: signal at T -> trade at T+1. On reversion days the strategy
+    # holds cash, earning 0 -- that line is flat at zero by design.
     ax3 = fig.add_subplot(gs[1, :])
-    mom_ret  = aligned_ret.where(labels == "momentum",  0)
-    mix_ret  = aligned_ret.where(labels == "mixed",     0) * 0.5
-    rev_ret  = aligned_ret.where(labels == "reversion", 0)
-    cum_total = aligned_ret.cumsum()
+    fwd_aligned = aligned_ret.shift(-1)           # next-day return per signal date
+    labels_d    = labels.reindex(fwd_aligned.index)
+    pct_rev     = (labels == "reversion").mean()
 
-    ax3.plot(cum_total.index, cum_total, color=C["bnh"],
+    mom_contrib = fwd_aligned.where(labels_d == "momentum",  0)
+    mix_contrib = fwd_aligned.where(labels_d == "mixed",     0) * 0.5
+    rev_contrib = pd.Series(0.0, index=fwd_aligned.index)   # cash -> zero
+
+    cum_bnh = aligned_ret.cumsum()
+
+    ax3.plot(cum_bnh.index, cum_bnh, color=C["bnh"],
              lw=1.3, ls="--", alpha=0.8,
              label="Buy and Hold (cumulative log return)")
-    ax3.plot(mom_ret.cumsum().index, mom_ret.cumsum(), color=C["momentum"], lw=1.5,
-             label="Days in momentum, full (+1)  - %.0f%% of time" % (pct_momentum * 100))
-    ax3.plot(mix_ret.cumsum().index, mix_ret.cumsum(), color=C["mixed"], lw=1.5, ls="-.",
-             label="Days in mixed, half (+0.5)  - %.0f%% of time" % (pct_mixed * 100))
-    ax3.plot(rev_ret.cumsum().index, rev_ret.cumsum(), color=C["reversion"],
-             lw=1.3, ls=":", alpha=0.75,
-             label="Days in reversion, cash (0)  - %.0f%% of time" % (
-                 (labels == "reversion").mean() * 100))
+    ax3.plot(mom_contrib.cumsum().index, mom_contrib.cumsum(),
+             color=C["momentum"], lw=1.5,
+             label="Momentum days, full long (+1)  - %.0f%% of time" % (pct_momentum * 100))
+    ax3.plot(mix_contrib.cumsum().index, mix_contrib.cumsum(),
+             color=C["mixed"], lw=1.5, ls="-.",
+             label="Mixed days, half long (+0.5)  - %.0f%% of time" % (pct_mixed * 100))
+    ax3.plot(rev_contrib.index, rev_contrib.cumsum(),
+             color=C["reversion"], lw=1.3, ls=":", alpha=0.75,
+             label="Reversion days, cash (0)  - %.0f%% of time" % (pct_rev * 100))
     ax3.axhline(0, color=C["subtext"], lw=0.6)
-    ax3.set_ylabel("Cumulative log return", fontsize=8)
+    ax3.set_ylabel("Cumulative strategy log return", fontsize=8)
     ax3.tick_params(axis="x", labelsize=7.5)
-    ax3.legend(fontsize=7.5, framealpha=0.8, loc="upper left")
+    ax3.legend(fontsize=7.5, framealpha=0.8, loc="lower right")
     _style(ax3)
-    _title(ax3, "Cumulative Return Decomposition - Contribution by Regime",
-           sub="Mixed regime half-position (+0.5) captures statistically significant positive drift (T=3.21, p=0.001)")
+    _title(ax3, "Cumulative Strategy Return Decomposition - Contribution by Regime")
+    ax3.text(0.01, -0.10,
+             "Uses next-day returns (1-day execution lag). Mixed half-position (+0.5) captures "
+             "statistically significant positive drift (T=3.21, p=0.001). Reversion = cash = flat line.",
+             transform=ax3.transAxes, fontsize=6.5, color=C["subtext"], va="top")
 
     # Panel 4: Regime signal ACF
     ax4 = fig.add_subplot(gs[2, 0])
