@@ -106,9 +106,13 @@ def run_backtest(
     )
 
 
-def compute_stats(bt: pd.DataFrame) -> dict:
+def compute_stats(bt: pd.DataFrame, raw: bool = False) -> dict:
     """
     Compute annualised return, Sharpe, max drawdown, and t-stat.
+
+    Args:
+        raw : if True, return raw floats instead of formatted strings.
+              Useful for programmatic comparison (e.g. multi-asset table).
 
     Returns dict: {"Strategy": {...}, "Buy & Hold": {...}}
     """
@@ -121,6 +125,8 @@ def compute_stats(bt: pd.DataFrame) -> dict:
         eq      = np.exp(r.cumsum())
         max_dd  = (eq / eq.cummax() - 1).min()
         t, p    = stats.ttest_1samp(r, 0)
+        if raw:
+            return {"CAGR": cagr, "Sharpe": sharpe, "Max DD": max_dd, "T-stat": t, "P-value": p}
         return {
             "CAGR":     f"{cagr*100:+.1f}%",
             "Sharpe":   f"{sharpe:.2f}",

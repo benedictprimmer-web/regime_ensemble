@@ -13,10 +13,13 @@ Usage:
     python run.py --short           # allow short on reversion days
     python run.py --skip-bic        # skip BIC model selection (saves ~30s)
     python run.py --walkforward     # run walk-forward OOS validation (~5 mins)
+    python run.py --multi-asset     # run on SPY, QQQ, IWM, TLT, GLD (~3 mins)
 
 Outputs (saved to outputs/):
     {ticker}_{from_year}_{to_year}_regime_overview.png
     {ticker}_{from_year}_{to_year}_equity_curves.png
+    {ticker}_{from_year}_{to_year}_walkforward_oos.png  (--walkforward only)
+    multi_asset_{from_year}_{to_year}_comparison.png    (--multi-asset only)
 """
 
 import argparse
@@ -49,6 +52,8 @@ COLORS = {
     "bnh":       "#2c3e50",
     "strategy":  "#2980b9",
 }
+
+MULTI_ASSET_TICKERS = ["SPY", "QQQ", "IWM", "TLT", "GLD"]
 
 
 # ── Plotting ───────────────────────────────────────────────────────────
@@ -157,6 +162,205 @@ def plot_equity_curves(bt: pd.DataFrame, run_prefix: str = "SPY") -> None:
     print(f"  Saved → {path}")
 
 
+def plot_walkforward_equity(
+    oos_returns: pd.DataFrame,
+    run_prefix: str = "SPY",
+    test_size: int = 63,
+) -> None:
+    """
+    Plot the stitched OOS equity curve from all walk-forward folds.
+
+    Each fold contributes ~63 trading days. Vertical dashed lines mark
+    fold boundaries. This shows what the strategy would have returned
+    out-of-sample, period by period — no look-ahead.
+    """
+    strat_eq = np.exp(oos_returns["strategy_return"].cumsum())
+    bnh_eq   = np.exp(oos_returns["bnh_return"].cumsum())
+
+    strat_dd = strat_eq / strat_eq.cummax() - 1
+    bnh_dd   = bnh_eq   / bnh_eq.cummax()   - 1
+
+    # Fold boundary dates: every test_size-th index step
+    fold_starts = [oos_returns.index[i] for i in range(0, len(oos_returns), test_size) if i > 0]
+
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(12, 8),
+        gridspec_kw={"height_ratios": [3, 1]},
+        sharex=True,
+    )
+
+    ax1.plot(strat_eq.index, strat_eq, color=COLORS["strategy"], linewidth=1.5, label="Strategy (OOS)")
+    ax1.plot(bnh_eq.index,   bnh_eq,   color=COLORS["bnh"],      linewidth=1.5, label="Buy & Hold")
+    ax1.axhline(1.0, color="#bdc3c7", linewidth=0.6, linestyle="--")
+    for fs in fold_starts:
+        ax1.axvline(fs, color="#bdc3c7", linewidth=0.7, linestyle="--", alpha=0.6)
+    ax1.set_ylabel("Equity (base = 1.0)", fontsize=9)
+    ax1.legend(fontsize=9)
+    ax1.set_title("Walk-Forward OOS Equity Curve — All Folds Stitched", fontsize=11)
+    ax1.text(
+        0.01, 0.03,
+        "Each segment is out-of-sample. Dashed lines = fold boundaries. Zero transaction costs.",
+        transform=ax1.transAxes, fontsize=7, color="#7f8c8d", style="italic",
+    )
+
+    ax2.fill_between(strat_dd.index, strat_dd, 0, alpha=0.45, color=COLORS["strategy"], label="Strategy")
+    ax2.fill_between(bnh_dd.index,   bnh_dd,   0, alpha=0.30, color=COLORS["bnh"],      label="Buy & Hold")
+    for fs in fold_starts:
+        ax2.axvline(fs, color="#bdc3c7", linewidth=0.7, linestyle="--", alpha=0.6)
+    ax2.set_ylabel("Drawdown", fontsize=9)
+    ax2.legend(fontsize=8, loc="lower left")
+    ax2.tick_params(axis="x", labelsize=8)
+
+    fig.autofmt_xdate(rotation=30, ha="right")
+    fig.tight_layout()
+    path = OUTPUT_DIR / f"{run_prefix}_walkforward_oos.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved → {path}")
+
+
+def run_pipeline_for_ticker(
+    ticker: str,
+    from_date: str,
+    to_date: str,
+    allow_short: bool = False,
+    min_hold_days: int = 1,
+) -> dict:
+    """
+    Run the full regime detection + backtest pipeline on a single ticker.
+
+    Used by --multi-asset to compare multiple assets without charts or prints.
+
+    Returns:
+        dict with raw float metrics for strategy and buy & hold.
+    """
+    df  = fetch_daily_bars(ticker, from_date, to_date)
+    ret = log_returns(df)
+
+    geo          = geometric_signal(ret, window=15)
+    mom_prob, crisis_prob, _, _ = fit_markov3(ret, verbose=False)
+    score        = ensemble_score(geo, mom_prob, crisis_prob)
+    labels       = regime_labels(score)
+    bt           = run_backtest(ret, labels, allow_short=allow_short,
+                                cost_bps=0, min_hold_days=min_hold_days)
+    perf         = compute_stats(bt, raw=True)
+
+    s = perf["Strategy (Long Only)"]
+    b = perf["Buy & Hold"]
+
+    pct_momentum = (labels == "momentum").mean()
+    pct_mixed    = (labels == "mixed").mean()
+
+    return {
+        "ticker":       ticker,
+        "n_days":       len(ret),
+        "cagr_s":       s["CAGR"],
+        "sharpe_s":     s["Sharpe"],
+        "maxdd_s":      s["Max DD"],
+        "tstat_s":      s["T-stat"],
+        "pval_s":       s["P-value"],
+        "cagr_b":       b["CAGR"],
+        "sharpe_b":     b["Sharpe"],
+        "maxdd_b":      b["Max DD"],
+        "pct_momentum": pct_momentum,
+        "pct_mixed":    pct_mixed,
+    }
+
+
+def _print_multi_asset_table(results: list) -> None:
+    print(f"\n  {'Ticker':<6}  {'CAGR(S)':>8}  {'Sharpe(S)':>9}  {'MaxDD(S)':>9}  "
+          f"{'T-stat':>7}  {'p':>6}  {'CAGR(B&H)':>10}  {'Sharpe(B&H)':>11}  {'%Mom':>5}  {'%Mix':>5}")
+    print("  " + "─" * 88)
+    for r in results:
+        sig = "✓" if r["pval_s"] < 0.05 else ("~" if r["pval_s"] < 0.10 else " ")
+        print(
+            f"  {r['ticker']:<6}  "
+            f"{r['cagr_s']*100:>+7.1f}%  "
+            f"{r['sharpe_s']:>9.2f}  "
+            f"{r['maxdd_s']*100:>8.1f}%  "
+            f"{r['tstat_s']:>7.2f}  "
+            f"{r['pval_s']:>6.3f}{sig}  "
+            f"{r['cagr_b']*100:>+9.1f}%  "
+            f"{r['sharpe_b']:>11.2f}  "
+            f"{r['pct_momentum']*100:>4.0f}%  "
+            f"{r['pct_mixed']*100:>4.0f}%"
+        )
+
+
+def _plot_multi_asset_chart(results: list, from_date: str, to_date: str) -> None:
+    tickers     = [r["ticker"] for r in results]
+    sharpe_s    = [r["sharpe_s"]    for r in results]
+    sharpe_b    = [r["sharpe_b"]    for r in results]
+    cagr_s      = [r["cagr_s"] * 100 for r in results]
+    cagr_b      = [r["cagr_b"] * 100 for r in results]
+    maxdd_s     = [abs(r["maxdd_s"]) * 100 for r in results]
+    maxdd_b     = [abs(r["maxdd_b"]) * 100 for r in results]
+
+    x = np.arange(len(tickers))
+    w = 0.35
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    fig.suptitle(
+        f"Multi-Asset Regime Ensemble — {from_date[:4]}–{to_date[:4]}  "
+        f"(zero transaction costs, 1-day lag)",
+        fontsize=11,
+    )
+
+    # Panel 1: Sharpe
+    ax = axes[0]
+    ax.bar(x - w/2, sharpe_s, w, label="Strategy", color=COLORS["strategy"], alpha=0.85)
+    ax.bar(x + w/2, sharpe_b, w, label="Buy & Hold", color=COLORS["bnh"],    alpha=0.85)
+    ax.axhline(0, color="#bdc3c7", linewidth=0.6)
+    ax.set_xticks(x); ax.set_xticklabels(tickers)
+    ax.set_ylabel("Sharpe Ratio"); ax.set_title("Sharpe Ratio")
+    ax.legend(fontsize=8)
+
+    # Panel 2: CAGR
+    ax = axes[1]
+    ax.bar(x - w/2, cagr_s, w, label="Strategy", color=COLORS["strategy"], alpha=0.85)
+    ax.bar(x + w/2, cagr_b, w, label="Buy & Hold", color=COLORS["bnh"],    alpha=0.85)
+    ax.axhline(0, color="#bdc3c7", linewidth=0.6)
+    ax.set_xticks(x); ax.set_xticklabels(tickers)
+    ax.set_ylabel("CAGR (%)"); ax.set_title("Annualised Return")
+    ax.legend(fontsize=8)
+
+    # Panel 3: Max Drawdown (shown as positive magnitude)
+    ax = axes[2]
+    ax.bar(x - w/2, maxdd_s, w, label="Strategy", color=COLORS["strategy"], alpha=0.85)
+    ax.bar(x + w/2, maxdd_b, w, label="Buy & Hold", color=COLORS["reversion"], alpha=0.85)
+    ax.set_xticks(x); ax.set_xticklabels(tickers)
+    ax.set_ylabel("Max Drawdown (% magnitude)"); ax.set_title("Max Drawdown")
+    ax.legend(fontsize=8)
+
+    fig.tight_layout()
+    from_year = from_date[:4]; to_year = to_date[:4]
+    path = OUTPUT_DIR / f"multi_asset_{from_year}_{to_year}_comparison.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"\n  Saved → {path}")
+
+
+def run_multi_asset(args) -> None:
+    _section("MULTI-ASSET VALIDATION  (SPY, QQQ, IWM, TLT, GLD)")
+    print("  Fitting Markov k=3 for each asset (~30s each)...\n")
+    results = []
+    for ticker in MULTI_ASSET_TICKERS:
+        print(f"  [{ticker}] fitting...")
+        row = run_pipeline_for_ticker(
+            ticker, args.from_date, args.to_date,
+            allow_short=args.short,
+            min_hold_days=args.min_hold,
+        )
+        results.append(row)
+        print(f"  [{ticker}] done — Sharpe {row['sharpe_s']:.2f}  CAGR {row['cagr_s']*100:+.1f}%  "
+              f"vs B&H Sharpe {row['sharpe_b']:.2f}")
+
+    _section("MULTI-ASSET RESULTS")
+    _print_multi_asset_table(results)
+    print("\n  ✓ = p<0.05   ~ = p<0.10   (strategy return vs zero)")
+    _plot_multi_asset_chart(results, args.from_date, args.to_date)
+
+
 # ── Main ───────────────────────────────────────────────────────────────
 
 
@@ -176,7 +380,12 @@ def main() -> None:
                         help="Persistence filter: require N consecutive days in regime before switching (default: 1 = off)")
     parser.add_argument("--skip-bic",    action="store_true", help="Skip BIC model selection step (~60s)")
     parser.add_argument("--walkforward", action="store_true", help="Run walk-forward OOS validation (~5 mins)")
+    parser.add_argument("--multi-asset", action="store_true", help="Run on SPY, QQQ, IWM, TLT, GLD (~3 mins)")
     args = parser.parse_args()
+
+    if args.multi_asset:
+        run_multi_asset(args)
+        return
 
     run_prefix = f"{args.ticker}_{args.from_date[:4]}_{args.to_date[:4]}"
 
@@ -272,12 +481,13 @@ def main() -> None:
         _section("8. WALK-FORWARD OOS VALIDATION  (10 folds x 63 days, fully OOS)")
         print("  Geometric: thresholds from train slice only.")
         print("  Markov: fitted on train, forward-filtered on test (no EM on test data).\n")
-        wf_df = walk_forward(ret, n_folds=10, test_size=63)
+        wf_df, oos_returns = walk_forward(ret, n_folds=10, test_size=63)
         print(wf_df.to_string())
         pos_folds = (wf_df.loc[(slice(None), "momentum"), "Dir"] == "✓").sum()
         total     = len(wf_df.loc[(slice(None), "momentum")])
         print(f"\n  Momentum regime positive in {pos_folds}/{total} folds")
         print("  (>= 7/10 is consistent with signal having real predictive power)")
+        plot_walkforward_equity(oos_returns, run_prefix=run_prefix, test_size=63)
         charts_section = 9
     else:
         charts_section = 8

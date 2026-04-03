@@ -31,13 +31,14 @@ from statsmodels.tools.sm_exceptions import EstimationWarning
 from src.geometric import straightness_ratio, geometric_signal, compute_thresholds
 from src.ensemble  import ensemble_score, regime_labels
 from src.markov    import AR_ORDER
+from src.backtest  import run_backtest
 
 
 def walk_forward(
     returns: pd.Series,
     n_folds: int  = 5,
     test_size: int = 63,   # ~1 quarter of trading days
-) -> pd.DataFrame:
+) -> tuple:
     """
     Walk-forward OOS validation of the ensemble signal.
 
@@ -47,7 +48,10 @@ def walk_forward(
         test_size : trading days per test fold
 
     Returns:
-        DataFrame: per-fold momentum regime forward-return statistics.
+        (stats_df, oos_returns) where:
+            stats_df    : per-fold momentum/reversion forward-return statistics
+            oos_returns : continuous OOS daily returns DataFrame with columns
+                          strategy_return and bnh_return (all folds concatenated)
     """
     n = len(returns)
     min_train = n - n_folds * test_size
@@ -59,6 +63,7 @@ def walk_forward(
         )
 
     rows = []
+    oos_pieces = []
     for fold in range(n_folds):
         # Each fold steps the test window forward by test_size days
         test_end   = n - (n_folds - 1 - fold) * test_size
@@ -130,6 +135,9 @@ def walk_forward(
         score  = ensemble_score(geo_test, mom_prob_test, crisis_prob_test)
         labels = regime_labels(score)
 
+        bt_fold = run_backtest(test_ret, labels, allow_short=False, cost_bps=0)
+        oos_pieces.append(bt_fold[["strategy_return", "bnh_return"]])
+
         fwd_ret = test_ret.shift(-1).rename("log_return")
         aligned = pd.concat([fwd_ret, labels], axis=1).dropna()
 
@@ -154,4 +162,6 @@ def walk_forward(
                 "Dir":         ("✓" if mean_r > 0 else "✗") if not np.isnan(mean_r) else "—",
             })
 
-    return pd.DataFrame(rows).set_index(["Fold", "Regime"])
+    stats_df    = pd.DataFrame(rows).set_index(["Fold", "Regime"])
+    oos_returns = pd.concat(oos_pieces).sort_index().dropna()
+    return stats_df, oos_returns
