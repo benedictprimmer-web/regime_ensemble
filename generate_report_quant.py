@@ -91,7 +91,7 @@ def _hline(ax, y, **kwargs):
 def _footer(fig, page, total=3):
     fig.text(
         0.5, 0.012,
-        "Page %d of %d  -  regime_ensemble v2.0  -  SPY %s-%s  -  "
+        "Page %d of %d  -  regime_ensemble v3.1  -  SPY %s-%s  -  "
         "github.com/benedictprimmer-web/regime_ensemble" % (
             page, total, FROM_DATE[:4], TO_DATE[:4]),
         ha="center", fontsize=6, color=C["subtext"],

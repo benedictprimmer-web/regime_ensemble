@@ -97,7 +97,7 @@ def make_page1():
     fig.text(0.5, 0.925, "Detecting market conditions to reduce risk — not just maximise returns",
              ha="center", fontsize=10, color=C["subtext"])
     fig.text(0.5, 0.906,
-             f"SPY  ·  {FROM_DATE[:4]}–{TO_DATE[:4]}  ·  v2.0",
+             f"SPY  ·  {FROM_DATE[:4]}–{TO_DATE[:4]}  ·  v3.1",
              ha="center", fontsize=8.5, color=C["subtext"])
 
     # ── Divider ───────────────────────────────────────────────────────────
@@ -200,11 +200,11 @@ def make_page1():
     ax5.axline((0, 0.78), slope=0, color="#dde", lw=0.8,
                transform=ax5.transAxes)
     ax5.text(0.0, 0.12,
-             "⚠  At 10bps round-trip costs, Sharpe drops to 0.55. At 20bps, the strategy is unprofitable. "
+             "⚠  At 10bps round-trip costs, Sharpe drops to 0.28. Strategy breaks even around 20bps. "
              "Transaction costs are material — see page 3.",
              transform=ax5.transAxes, fontsize=7.5, color=C["gold"], va="top")
 
-    fig.text(0.5, 0.02, "Page 1 of 3  ·  regime_ensemble v2.0  ·  github.com/benedictprimmer-web/regime_ensemble",
+    fig.text(0.5, 0.02, "Page 1 of 3  ·  regime_ensemble v3.1  ·  github.com/benedictprimmer-web/regime_ensemble",
              ha="center", fontsize=6.5, color=C["subtext"])
     return fig
 
@@ -292,7 +292,7 @@ def make_page2():
              "Filtered probabilities only — no look-ahead bias.")
 
     fig.autofmt_xdate(rotation=25, ha="right")
-    fig.text(0.5, 0.02, "Page 2 of 3  ·  regime_ensemble v2.0  ·  github.com/benedictprimmer-web/regime_ensemble",
+    fig.text(0.5, 0.02, "Page 2 of 3  ·  regime_ensemble v3.1  ·  github.com/benedictprimmer-web/regime_ensemble",
              ha="center", fontsize=6.5, color=C["subtext"])
     return fig
 
@@ -330,8 +330,8 @@ def make_page3():
     ax1.tick_params(axis="x", labelsize=8)
     _section_title(ax1, "Equity Curves — Strategy vs Buy & Hold (0 bps costs)")
     _caption(ax1,
-             "The strategy does NOT outperform buy-and-hold on raw returns (+1.8% vs +8.6% CAGR over 25 years).\n"
-             "The edge is risk reduction: max drawdown cut from -56.5% to -15.9%. At 5-10bps costs, returns compress further.",
+             "Strategy Sharpe (0.68) beats buy-and-hold (0.44) with far lower drawdown (-16.7% vs -56.5%).\n"
+             "CAGR trails B&H (+5.7% vs +8.6%) -- the edge is risk-adjusted return, not raw return.",
              y=-0.28)
 
     # ── Panel 2: Drawdown ──────────────────────────────────────────────────
@@ -383,11 +383,11 @@ def make_page3():
         ("Longer sample, but single asset",
          "2000-2025 covers dot-com, GFC, COVID -- but it is still only SPY. Cross-validate on other tickers."),
         ("Transaction costs are material",
-         "At 10bps round-trip, Sharpe halves. At 20bps the strategy loses money. Manage turnover."),
+         "At 10bps round-trip, Sharpe drops to 0.28. Breaks even around 20bps. Manage turnover."),
         ("In-sample threshold calibration",
          "Regime thresholds were tuned on the full dataset. Real-time use requires expanding-window recalibration."),
         ("Reversion signal is weak",
-         "Momentum signal is statistically significant (p=0.034). Reversion is not (p=0.29). Don't short on it."),
+         "Overall strategy T=3.13 (p=0.002). Reversion p=0.73 -- not significant. Don't short on it."),
         ("Single asset only",
          "Everything here is SPY. Regime structure may not generalise to other assets, sectors, or markets."),
     ]
@@ -398,7 +398,7 @@ def make_page3():
         ax4.text(0.01, y - 0.07, f"    {body}", transform=ax4.transAxes,
                  fontsize=7.8, color=C["subtext"], va="top")
 
-    fig.text(0.5, 0.02, "Page 3 of 3  ·  regime_ensemble v2.0  ·  github.com/benedictprimmer-web/regime_ensemble",
+    fig.text(0.5, 0.02, "Page 3 of 3  ·  regime_ensemble v3.1  ·  github.com/benedictprimmer-web/regime_ensemble",
              ha="center", fontsize=6.5, color=C["subtext"])
     return fig
 
