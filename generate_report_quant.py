@@ -91,7 +91,7 @@ def _hline(ax, y, **kwargs):
 def _footer(fig, page, total=3):
     fig.text(
         0.5, 0.012,
-        "Page %d of %d  -  regime_ensemble v3.1  -  SPY %s-%s  -  "
+        "Page %d of %d  -  regime_ensemble v4.0  -  SPY %s-%s  -  "
         "github.com/benedictprimmer-web/regime_ensemble" % (
             page, total, FROM_DATE[:4], TO_DATE[:4]),
         ha="center", fontsize=6, color=C["subtext"],
@@ -182,7 +182,10 @@ bnh_ext   = extended_metrics(bnh_ret)
 
 excess = strat_ret - bnh_ret
 ir     = (excess.mean() * 252) / (excess.std() * np.sqrt(252))
-pct_invested = (labels == "momentum").mean()
+# Mean exposure: full position on momentum + half on mixed
+pct_momentum = (labels == "momentum").mean()
+pct_mixed    = (labels == "mixed").mean()
+mean_exposure = pct_momentum + 0.5 * pct_mixed
 
 # Cost sensitivity curve
 bps_range  = np.arange(0, 31, 1)
@@ -370,7 +373,7 @@ def make_page2():
                  ha="center", fontsize=6.5, color=C["subtext"])
     _style(ax1)
     _title(ax1, "Next-Day Returns by Regime",
-           sub="Error bars: 95% CI  -  ** p<0.05, * p<0.10, ns = not significant")
+           sub="Error bars: 95% CI  -  ** p<0.05, * p<0.10, ns = not significant  -  Mixed is the most significant regime")
 
     # Panel 2: Rolling 63-day Information Coefficient
     ax2 = fig.add_subplot(gs[0, 1])
@@ -390,31 +393,31 @@ def make_page2():
     _title(ax2, "Rolling 63-day Information Coefficient",
            sub="IC = corr(ensemble_score[t], return[t+1])")
 
-    # Panel 3: Cumulative return decomposition
+    # Panel 3: Cumulative return decomposition (3-regime)
     ax3 = fig.add_subplot(gs[1, :])
-    invested_ret = aligned_ret.where(labels == "momentum", 0)
-    cash_ret     = aligned_ret.where(labels != "momentum", 0)
-    cum_invested = invested_ret.cumsum()
-    cum_cash     = cash_ret.cumsum()
-    cum_total    = aligned_ret.cumsum()
+    mom_ret  = aligned_ret.where(labels == "momentum",  0)
+    mix_ret  = aligned_ret.where(labels == "mixed",     0) * 0.5
+    rev_ret  = aligned_ret.where(labels == "reversion", 0)
+    cum_total = aligned_ret.cumsum()
 
-    ax3.plot(cum_total.index,    cum_total,    color=C["bnh"],
+    ax3.plot(cum_total.index, cum_total, color=C["bnh"],
              lw=1.3, ls="--", alpha=0.8,
              label="Buy and Hold (cumulative log return)")
-    ax3.plot(cum_invested.index, cum_invested, color=C["momentum"], lw=1.5,
-             label="Days in momentum (%.0f%% of time)" % (
-                 (labels == "momentum").mean() * 100))
-    ax3.plot(cum_cash.index,     cum_cash,     color=C["reversion"],
-             lw=1.5, ls="-.", alpha=0.75,
-             label="Days in cash (%.0f%% of time)" % (
-                 (labels != "momentum").mean() * 100))
+    ax3.plot(mom_ret.cumsum().index, mom_ret.cumsum(), color=C["momentum"], lw=1.5,
+             label="Days in momentum, full (+1)  - %.0f%% of time" % (pct_momentum * 100))
+    ax3.plot(mix_ret.cumsum().index, mix_ret.cumsum(), color=C["mixed"], lw=1.5, ls="-.",
+             label="Days in mixed, half (+0.5)  - %.0f%% of time" % (pct_mixed * 100))
+    ax3.plot(rev_ret.cumsum().index, rev_ret.cumsum(), color=C["reversion"],
+             lw=1.3, ls=":", alpha=0.75,
+             label="Days in reversion, cash (0)  - %.0f%% of time" % (
+                 (labels == "reversion").mean() * 100))
     ax3.axhline(0, color=C["subtext"], lw=0.6)
     ax3.set_ylabel("Cumulative log return", fontsize=8)
     ax3.tick_params(axis="x", labelsize=7.5)
     ax3.legend(fontsize=7.5, framealpha=0.8, loc="upper left")
     _style(ax3)
-    _title(ax3, "Cumulative Return Decomposition - Invested vs In-Cash Days",
-           sub="Positive contribution from cash days confirms reversion avoidance adds value")
+    _title(ax3, "Cumulative Return Decomposition - Contribution by Regime",
+           sub="Mixed regime half-position (+0.5) captures statistically significant positive drift (T=3.21, p=0.001)")
 
     # Panel 4: Regime signal ACF
     ax4 = fig.add_subplot(gs[2, 0])
@@ -580,8 +583,10 @@ def make_page3():
              transform=ax4.transAxes, color=C["gridline"], lw=0.5, clip_on=False)
 
     extras = [
-        ("Information Ratio", "%.2f" % ir, "n/a"),
-        ("Time Invested",     "%.1f%%" % (pct_invested * 100), "100.0%"),
+        ("Information Ratio",   "%.2f" % ir, "n/a"),
+        ("Mean Exposure",       "%.1f%%" % (mean_exposure * 100), "100.0%"),
+        ("% Time Fully Long",   "%.1f%%" % (pct_momentum * 100), "100.0%"),
+        ("% Time Half Long",    "%.1f%%" % (pct_mixed * 100),    "0.0%"),
     ]
     for i, (m, sv, bv) in enumerate(extras):
         y = extra_y - i * row_h + 0.025

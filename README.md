@@ -154,6 +154,12 @@ regime_ensemble/
 
 ## Changelog
 
+### v4.0
+- **Half-position on mixed days** — "mixed" regime (detectors disagree) has T=3.21, p=0.001 on 25-year data. Changed from cash to +0.5 long. Sharpe improves from 0.29→0.68; strategy T-stat 1.32 (p=0.19)→3.13 (p=0.002).
+- **Regime persistence filter** (`--min-hold N`) — requires N consecutive days in a regime before the position switches. Default off. At `--min-hold 3`: profitable to ~20bps round-trip vs ~15bps unfiltered.
+- **Markov convergence fix** — `em_iter=200` with `search_reps=5` random starts eliminates `ConvergenceWarning` on 25-year data. Zero warnings in production.
+- **Updated reports** — both PDFs regenerated with v4.0 results; quant report cumulative decomposition now shows all 3 regime contributions; plain-English report rewritten to be less introductory.
+
 ### v3.0
 - **Extended data to 2000–2025** — all reports and report generators now use the full 25-year history covering dot-com crash, GFC 2008, COVID 2020, and 2022 bear market.
 - **Half-position on mixed days** — "mixed" regime (when the two detectors disagree) has the strongest forward-return signal (T=3.21, p=0.001). Changed from cash to 0.5× long; Sharpe improves from 0.29 to 0.68, T-stat from 1.32 to 3.13.

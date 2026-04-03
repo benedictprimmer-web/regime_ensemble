@@ -167,6 +167,7 @@ def fit_markov3(returns: pd.Series, verbose: bool = True):
             "names":        names,
             "expected_dur": expected_dur,
             "switches_pa":  switches_pa,
+            "regime_stats": regime_stats,
         }
 
         if verbose:
