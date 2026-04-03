@@ -215,7 +215,7 @@ def make_page1():
 
 def make_page2():
     fig = plt.figure(figsize=(8.27, 11.69), facecolor="white")
-    fig.subplots_adjust(left=0.09, right=0.95, top=0.92, bottom=0.06,
+    fig.subplots_adjust(left=0.09, right=0.95, top=0.87, bottom=0.06,
                         hspace=0.45)
 
     fig.text(0.5, 0.96, "Models in Action — SPY 2000-2025 (Real Data)",
@@ -227,7 +227,7 @@ def make_page2():
                                transform=fig.transFigure, color="#dde", lw=1))
 
     gs = gridspec.GridSpec(3, 1, figure=fig, left=0.09, right=0.95,
-                           top=0.92, bottom=0.06, hspace=0.42)
+                           top=0.87, bottom=0.06, hspace=0.42)
 
     # ── Panel 1: SPY price coloured by regime ─────────────────────────────
     ax1 = fig.add_subplot(gs[0])
@@ -303,7 +303,7 @@ def make_page2():
 
 def make_page3():
     fig = plt.figure(figsize=(8.27, 11.69), facecolor="white")
-    fig.subplots_adjust(left=0.09, right=0.95, top=0.92, bottom=0.07,
+    fig.subplots_adjust(left=0.09, right=0.95, top=0.87, bottom=0.07,
                         hspace=0.90, wspace=0.38)
 
     fig.text(0.5, 0.96, "Results & Limitations",
@@ -315,7 +315,7 @@ def make_page3():
                                transform=fig.transFigure, color="#dde", lw=1))
 
     gs = gridspec.GridSpec(3, 2, figure=fig, left=0.09, right=0.95,
-                           top=0.92, bottom=0.06, hspace=0.90, wspace=0.38)
+                           top=0.87, bottom=0.06, hspace=0.90, wspace=0.38)
 
     # ── Panel 1: Equity curves ─────────────────────────────────────────────
     ax1 = fig.add_subplot(gs[0, :])
@@ -330,8 +330,9 @@ def make_page3():
     ax1.tick_params(axis="x", labelsize=8)
     _section_title(ax1, "Equity Curves — Strategy vs Buy & Hold (0 bps costs)")
     _caption(ax1,
-             "The strategy slightly outperforms buy-and-hold over this period, but the real edge is risk reduction.\n"
-             "Note: 0 transaction costs shown. At realistic costs (5–10bps), returns compress — see bottom left.")
+             "The strategy does NOT outperform buy-and-hold on raw returns (+1.8% vs +8.6% CAGR over 25 years).\n"
+             "The edge is risk reduction: max drawdown cut from -56.5% to -15.9%. At 5-10bps costs, returns compress further.",
+             y=-0.28)
 
     # ── Panel 2: Drawdown ──────────────────────────────────────────────────
     ax2 = fig.add_subplot(gs[1, 0])
