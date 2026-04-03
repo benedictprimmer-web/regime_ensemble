@@ -10,23 +10,24 @@ Detects daily equity market regimes (momentum / reversion / mixed) using a two-m
 
 | Document | Description |
 |---|---|
-| [3-Page Report (PDF)](docs/SPY_3page_report.pdf) | Plain-English overview with real charts — price, signals, equity curves, limitations |
+| [3-Page Report (PDF)](docs/SPY_3page_report.pdf) | Plain-English overview — price, signals, equity curves, limitations (2000–2025) |
+| [Technical Quant Report (PDF)](docs/SPY_quant_report.pdf) | Regime KDE distributions, K-S tests, transition matrix, rolling IC, full attribution |
 | [v2.0 Methodology Update (PDF)](docs/v2_methodology_report.pdf) | What changed in v2: walk-forward leakage fix, extended data pipeline |
 
 ---
 
 ## Results at a Glance
 
-SPY · 2022–2025 · zero transaction costs · 1-day execution lag
+SPY · 2000–2025 · zero transaction costs · 1-day execution lag
 
 | Metric | Strategy | Buy & Hold |
 |---|---|---|
-| CAGR | **+7.8%** | +7.1% |
-| Sharpe Ratio | **1.23** | 0.39 |
-| Max Drawdown | **−4.2%** | −24.3% |
-| T-stat (momentum signal) | 2.12 | 0.67 |
+| CAGR | +1.8% | **+8.6%** |
+| Sharpe Ratio | 0.29 | **0.44** |
+| Max Drawdown | **−15.9%** | −56.5% |
+| T-stat (momentum signal) | 1.32 (p=0.19) | — |
 
-> **Transaction costs matter.** At 5bps round-trip, Sharpe drops to 0.89. At 10bps, to 0.55. At 20bps, the strategy is unprofitable. See the [3-page report](docs/SPY_3page_report.pdf) for the full sensitivity table.
+> **The primary value is drawdown reduction, not return.** Max drawdown is cut from −56.5% to −15.9% across 25 years covering dot-com crash, GFC 2008, COVID 2020, and the 2022 bear market. The momentum signal is not statistically significant at the 5% level over the full period — at 5bps round-trip the strategy is marginally profitable; at 10bps it loses money. See the reports below for the full picture.
 
 ---
 
@@ -92,10 +93,10 @@ python3 run.py --skip-bic
 # Custom ticker and date range
 python3 run.py --ticker QQQ --from 2010-01-01 --to 2025-01-01 --skip-bic
 
-# Also fetch VIX data (cached for future use)
-python3 run.py --fetch-vix --skip-bic
+# Fetch VIX data (requires Polygon paid plan) and use as dampening signal
+python3 run.py --fetch-vix --vix-signal --skip-bic
 
-# Walk-forward out-of-sample validation (~5 mins, 5 folds x 63 days)
+# Walk-forward out-of-sample validation (~10 mins, 10 folds x 63 days)
 python3 run.py --skip-bic --walkforward
 
 # Allow short on reversion days (signal is weak -- see limitations)
@@ -116,10 +117,10 @@ Outputs are saved to `outputs/` and prefixed with `{ticker}_{from}_{to}_`.
 
 These are not afterthoughts — they are the primary reasons results should not be extrapolated.
 
-1. **Short sample** — 2022–2025 is one specific market cycle. Untested in 2008, 2013, or 2020.
-2. **Transaction costs are material** — ~22 regime switches/year means costs compound. Strategy is unprofitable above ~15bps round-trip.
+1. **Momentum signal is not significant over 25 years** — T-stat 1.32 (p=0.19) on 2000–2025. The strategy reduces risk but does not reliably outperform buy-and-hold over the full period.
+2. **Transaction costs are material** — ~20 regime switches/year means costs compound. Strategy is unprofitable above ~5bps round-trip on the full period.
 3. **In-sample threshold calibration** — percentile thresholds and ensemble cutoffs were tuned on the full dataset. Real-time use requires expanding-window recalibration.
-4. **Reversion signal is not significant** — momentum p=0.034, reversion p=0.29. The `--short` flag exists for research only.
+4. **Reversion signal is not significant** — reversion p=0.73 over 25 years. The `--short` flag exists for research only.
 5. **Single asset** — SPY only. Regime structure may not generalise to other assets or markets.
 
 ---
@@ -129,7 +130,8 @@ These are not afterthoughts — they are the primary reasons results should not 
 ```
 regime_ensemble/
 ├── run.py                    -- main entry point (backtest + charts)
-├── generate_report_3page.py  -- 3-page PDF report with real charts
+├── generate_report_3page.py  -- 3-page plain-English PDF report (2000-2025)
+├── generate_report_quant.py  -- 3-page technical quant PDF report (2000-2025)
 ├── generate_report.py        -- 1-page v2 methodology update PDF
 ├── requirements.txt
 ├── .env.example              -- copy to .env, add POLYGON_API_KEY
@@ -151,6 +153,11 @@ regime_ensemble/
 ---
 
 ## Changelog
+
+### v3.0
+- **Extended data to 2000–2025** — all reports and report generators now use the full 25-year history covering dot-com crash, GFC 2008, COVID 2020, and 2022 bear market.
+- **VIX signal integration** — `--vix-signal` flag adds VIX as a continuous dampening factor on the momentum signal (VIX ≤ 20 = no effect; VIX 30 = 50% dampening; VIX ≥ 40 = fully suppressed). Orthogonal to the existing Markov crisis override.
+- **Walk-forward extended to 10 folds** — `--walkforward` now runs 10 × 63-day folds (was 5), covering multiple distinct market cycles for more robust OOS validation.
 
 ### v2.0
 - **Fixed walk-forward leakage** — Markov EM now fitted on train-only data; test slice is forward-filtered with frozen parameters via `.filter(params)`. Geometric thresholds use the new `compute_thresholds()` helper for clean train/test isolation.

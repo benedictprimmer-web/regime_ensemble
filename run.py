@@ -170,6 +170,7 @@ def main() -> None:
     parser.add_argument("--from",    dest="from_date",     default="2000-01-01", metavar="YYYY-MM-DD")
     parser.add_argument("--to",      dest="to_date",       default="2025-01-01", metavar="YYYY-MM-DD")
     parser.add_argument("--fetch-vix",   action="store_true", help="Fetch VIX (I:VIX) from Polygon alongside primary ticker")
+    parser.add_argument("--vix-signal",  action="store_true", help="Use VIX as dampening factor in ensemble (requires cached VIX data)")
     parser.add_argument("--short",       action="store_true", help="Allow short on reversion days")
     parser.add_argument("--skip-bic",    action="store_true", help="Skip BIC model selection step (~60s)")
     parser.add_argument("--walkforward", action="store_true", help="Run walk-forward OOS validation (~5 mins)")
@@ -185,7 +186,8 @@ def main() -> None:
     prices = df["close"]
     print(f"  {len(df)} trading days loaded")
 
-    if args.fetch_vix:
+    vix = None
+    if args.fetch_vix or args.vix_signal:
         print(f"  Fetching VIX (I:VIX)  {args.from_date} → {args.to_date}")
         vix_df = fetch_daily_bars("I:VIX", args.from_date, args.to_date)
         vix    = vix_levels(vix_df)
@@ -218,8 +220,12 @@ def main() -> None:
     mom_prob, crisis_prob, _, trans_info = fit_markov3(ret)
 
     # ── 5. Ensemble ────────────────────────────────────────────────────
-    _section("5. ENSEMBLE  (mean of geometric + Markov, crisis override at P>0.50)")
-    score  = ensemble_score(geo, mom_prob, crisis_prob)
+    vix_signal = vix if args.vix_signal else None
+    ensemble_desc = "mean of geometric + Markov, crisis override at P>0.50"
+    if vix_signal is not None:
+        ensemble_desc += ", VIX dampening active"
+    _section(f"5. ENSEMBLE  ({ensemble_desc})")
+    score  = ensemble_score(geo, mom_prob, crisis_prob, vix=vix_signal)
     labels = regime_labels(score)
     dist   = labels.value_counts()
     print("  Ensemble regime distribution:")
@@ -259,15 +265,15 @@ def main() -> None:
 
     # ── 8. Walk-Forward OOS Validation ─────────────────────────────────
     if args.walkforward:
-        _section("8. WALK-FORWARD OOS VALIDATION  (5 folds × 63 days, fully OOS)")
+        _section("8. WALK-FORWARD OOS VALIDATION  (10 folds x 63 days, fully OOS)")
         print("  Geometric: thresholds from train slice only.")
         print("  Markov: fitted on train, forward-filtered on test (no EM on test data).\n")
-        wf_df = walk_forward(ret, n_folds=5, test_size=63)
+        wf_df = walk_forward(ret, n_folds=10, test_size=63)
         print(wf_df.to_string())
         pos_folds = (wf_df.loc[(slice(None), "momentum"), "Dir"] == "✓").sum()
         total     = len(wf_df.loc[(slice(None), "momentum")])
         print(f"\n  Momentum regime positive in {pos_folds}/{total} folds")
-        print("  (≥ 3/5 is consistent with signal having real predictive power)")
+        print("  (>= 7/10 is consistent with signal having real predictive power)")
         charts_section = 9
     else:
         charts_section = 8

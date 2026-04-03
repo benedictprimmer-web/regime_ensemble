@@ -3,7 +3,7 @@
 Regime Ensemble — 3-Page Report Generator
 ==========================================
 Produces outputs/SPY_3page_report.pdf using real cached SPY data.
-No Polygon API key needed if data/cache/SPY_2022-01-01_2025-01-01.csv exists.
+No Polygon API key needed if data/cache/SPY_2000-01-01_2025-01-01.csv exists.
 
 Usage:
     python3 generate_report_3page.py
@@ -33,7 +33,7 @@ OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 TICKER    = "SPY"
-FROM_DATE = "2022-01-01"
+FROM_DATE = "2000-01-01"
 TO_DATE   = "2025-01-01"
 
 C = {
@@ -174,7 +174,7 @@ def make_page1():
     # ── Panel 5: Headline results ──────────────────────────────────────────
     ax5 = fig.add_subplot(gs[2, :])
     ax5.axis("off")
-    _section_title(ax5, "Headline Results  (SPY 2022–2025, zero transaction costs)")
+    _section_title(ax5, "Headline Results  (SPY 2000-2025, zero transaction costs)")
 
     headers = ["", "CAGR", "Sharpe Ratio", "Max Drawdown", "T-stat (momentum)"]
     row1    = ["Strategy (Regime Ensemble)", strat["CAGR"], strat["Sharpe"],
@@ -218,7 +218,7 @@ def make_page2():
     fig.subplots_adjust(left=0.09, right=0.95, top=0.92, bottom=0.06,
                         hspace=0.45)
 
-    fig.text(0.5, 0.96, "Models in Action — SPY 2022–2025 (Real Data)",
+    fig.text(0.5, 0.96, "Models in Action — SPY 2000-2025 (Real Data)",
              ha="center", fontsize=14, fontweight="bold", color=C["text"])
     fig.text(0.5, 0.945,
              "Three panels: price coloured by regime, geometric detector signal, Markov probabilities",
@@ -247,7 +247,7 @@ def make_page2():
     _section_title(ax1, "SPY Price — Coloured by Ensemble Regime")
     _caption(ax1,
              "Green = momentum (hold). Red = reversion (cash). Grey = mixed (cash).\n"
-             "The model correctly flags the 2022 bear market drawdown in red.")
+             "Green = momentum, red = crisis/reversion, grey = mixed. Covers dot-com, GFC 2008, COVID 2020, 2022 bear market.")
 
     # ── Panel 2: Geometric straightness ratio ─────────────────────────────
     ax2 = fig.add_subplot(gs[1], sharex=ax1)
@@ -346,7 +346,7 @@ def make_page3():
     ax2.spines[["top", "right"]].set_visible(False)
     ax2.tick_params(axis="x", labelsize=7)
     _section_title(ax2, "Drawdown Comparison")
-    _caption(ax2, "Strategy avoids most of the 2022 bear market.\nMax drawdown cut from −24.3% to −4.2%.", y=-0.30)
+    _caption(ax2, "Strategy reduces drawdowns across all major crashes (dot-com, GFC, COVID, 2022).", y=-0.30)
 
     # ── Panel 3: Transaction cost sensitivity ─────────────────────────────
     ax3 = fig.add_subplot(gs[1, 1])
@@ -379,8 +379,8 @@ def make_page3():
     _section_title(ax4, "Key Limitations — Read Before Drawing Conclusions")
 
     limits = [
-        ("Short sample (3 years)",
-         "2022–2025 is one specific market cycle. Results are not validated across 2008, 2013, or 2020."),
+        ("Longer sample, but single asset",
+         "2000-2025 covers dot-com, GFC, COVID -- but it is still only SPY. Cross-validate on other tickers."),
         ("Transaction costs are material",
          "At 10bps round-trip, Sharpe halves. At 20bps the strategy loses money. Manage turnover."),
         ("In-sample threshold calibration",

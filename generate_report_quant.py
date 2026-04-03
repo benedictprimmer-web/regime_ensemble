@@ -39,7 +39,7 @@ OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 TICKER    = "SPY"
-FROM_DATE = "2022-01-01"
+FROM_DATE = "2000-01-01"
 TO_DATE   = "2025-01-01"
 
 C = {
@@ -545,7 +545,7 @@ def make_page3():
     # Panel 4: Performance attribution table
     ax4 = fig.add_subplot(gs[2, :])
     ax4.axis("off")
-    _title(ax4, "Full Performance Attribution  (SPY 2022-2025, 0 bps)")
+    _title(ax4, "Full Performance Attribution  (SPY 2000-2025, 0 bps)")
 
     metrics = list(strat_ext.keys())
     col_x   = [0.0, 0.34, 0.55]
