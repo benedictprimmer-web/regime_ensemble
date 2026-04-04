@@ -421,14 +421,15 @@ def make_page3():
                     color=colors_bar, alpha=0.85, height=0.5)
     ax3.axvline(0, color=C["subtext"], lw=0.8)
     ax3.axvline(1.0, color=C["subtext"], lw=0.6, ls=":")
-    ax3.set_xlabel("Sharpe Ratio", fontsize=8)
+    ax3.text(0.98, 0.04, "Sharpe Ratio \u2192", transform=ax3.transAxes,
+             ha="right", va="bottom", fontsize=7.5, color=C["subtext"])
     for bar, val in zip(bars, sharpes):
         ax3.text(max(val + 0.03, 0.05), bar.get_y() + bar.get_height()/2,
                  f"{val:.2f}", va="center", fontsize=8.5, color=C["text"])
     ax3.spines[["top", "right"]].set_visible(False)
     ax3.tick_params(labelsize=8)
     _section_title(ax3, "Transaction Cost Sensitivity")
-    ax3.text(0.0, -0.28, "~%.0f switches/yr; Sharpe > B&H to ~%dbps; breaks even at ~%dbps.\nUse --min-hold 3 to cut switches and extend the profitable range." % (ensemble_switches_pa, beats_bnh_bps, breakeven_bps),
+    ax3.text(0.0, -0.18, "~%.0f switches/yr; Sharpe > B&H to ~%dbps; breaks even at ~%dbps.\nUse --min-hold 3 to cut switches and extend the profitable range." % (ensemble_switches_pa, beats_bnh_bps, breakeven_bps),
              transform=ax3.transAxes, fontsize=7.5, color=C["subtext"], ha="left", style="italic")
 
     # ── Panel 4: Limitations ──────────────────────────────────────────────
