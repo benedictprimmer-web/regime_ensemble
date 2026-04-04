@@ -2,32 +2,37 @@
 
 Detects daily equity market regimes (momentum / reversion / mixed) using a two-model ensemble, then backtests a simple long/cash strategy against buy-and-hold. The primary goal is **risk reduction**, not return maximisation.
 
-![SPY price coloured by detected regime](docs/regime_overview.png)
-
----
-
-## Documents
-
-| Document | Description |
+| Strategy vs Buy & Hold | Regimes detected on SPY price |
 |---|---|
-| [3-Page Report (PDF)](docs/SPY_3page_report.pdf) | Plain-English overview — price, signals, equity curves, limitations (2000–2025) |
-| [Technical Quant Report (PDF)](docs/SPY_quant_report.pdf) | Regime KDE distributions, K-S tests, transition matrix, rolling IC, full attribution |
-| [v2.0 Methodology Update (PDF)](docs/v2_methodology_report.pdf) | What changed in v2: walk-forward leakage fix, extended data pipeline |
+| ![Strategy vs Buy & Hold equity curves](docs/equity_curves.png) | ![SPY price coloured by detected regime](docs/regime_overview.png) |
 
 ---
 
 ## Results at a Glance
 
-SPY · 2000–2025 · zero transaction costs · 1-day execution lag
+SPY · 2000–2025 · zero transaction costs · 1-day execution lag · **v5 core strategy**
 
 | Metric | Strategy | Buy & Hold |
 |---|---|---|
 | CAGR | +5.7% | **+8.6%** |
 | Sharpe Ratio | **0.68** | 0.44 |
-| Max Drawdown | **−16.7%** | −56.5% |
+| Max Drawdown | **-16.7%** | -56.5% |
 | T-stat (p-value) | 3.13 (p=0.002) | 2.02 (p=0.043) |
 
-> **Strategy = full long on momentum, half-long on mixed, cash on reversion.** Sharpe beats buy-and-hold (0.68 vs 0.44) with dramatically lower drawdown (−16.7% vs −56.5%). Remains profitable at 10bps round-trip (Sharpe 0.28). At 20bps it breaks even. See the reports below for the full cost sensitivity table.
+> **Strategy = full long on momentum, half-long on mixed, cash on reversion.** Sharpe beats buy-and-hold (0.68 vs 0.44) with dramatically lower drawdown (-16.7% vs -56.5%). Remains profitable at 10 bps round-trip (Sharpe 0.28). At 20 bps it breaks even.
+
+v6.0 adds vol-ratio dampening, multi-scale geometric, and expanding-window OOS validation — see the [v6 technical report](docs/SPY_v6_report.pdf) for those results.
+
+---
+
+## Reports & Documents
+
+| Document | Version | Audience | Description |
+|---|---|---|---|
+| [3-Page Overview (PDF)](docs/SPY_3page_report.pdf) | v5 | General | Plain-English walkthrough: price, signals, equity curves, limitations |
+| [Technical Quant Report (PDF)](docs/SPY_quant_report.pdf) | v5 | Quantitative | KDE distributions, K-S tests, transition matrix, rolling IC, full attribution |
+| [v6 Technical Report (PDF)](docs/SPY_v6_report.pdf) | **v6** | Quantitative | Vol ratio dampening, multi-scale geometric, expanding-window OOS validation |
+| [v4/v5 Changes (PDF)](docs/v4v5_changes_report.pdf) | v4/v5 | Developer | What changed: half-position mixed regime, persistence filter, walk-forward OOS |
 
 ---
 
@@ -53,8 +58,8 @@ A statistical model that learns three hidden market states from daily return pat
 | Regime | Mean return | Vol (ann.) |
 |---|---|---|
 | Momentum | +0.142%/day | 10% |
-| Choppy | −0.029%/day | 23% |
-| Crisis | −0.199%/day | 16% |
+| Choppy | -0.029%/day | 23% |
+| Crisis | -0.199%/day | 16% |
 
 Uses **filtered probabilities only** — no look-ahead bias. When P(crisis) > 0.50, the buy signal is suppressed regardless of other indicators.
 
@@ -64,9 +69,9 @@ Uses **filtered probabilities only** — no look-ahead bias. When P(crisis) > 0.
 score = mean( geometric_signal, markov_momentum_probability )
 ```
 
-- Score ≥ 0.65 → **momentum** (hold)
-- Score ≤ 0.35 → **reversion** (cash)
-- 0.35 – 0.65  → **mixed** (cash)
+- Score >= 0.65 → **momentum** (hold)
+- Score <= 0.35 → **reversion** (cash)
+- 0.35 – 0.65  → **mixed** (half-long)
 
 Equal weighting is deliberate — fitting weights to historical returns would be in-sample optimisation. The value comes from combining two orthogonal signals: short-term path shape vs long-term statistical state.
 
@@ -87,41 +92,38 @@ cp .env.example .env
 ## Usage
 
 ```bash
-# Default: SPY 2000-01-01 to 2025-01-01
+# Standard backtest (SPY 2000-2025)
 python3 run.py --skip-bic
 
 # Custom ticker and date range
 python3 run.py --ticker QQQ --from 2010-01-01 --to 2025-01-01 --skip-bic
+```
 
-# Fetch VIX data (requires Polygon paid plan) and use as dampening signal
-python3 run.py --fetch-vix --vix-signal --skip-bic
+```bash
+# v6 features
+python3 run.py --vol-signal --multi-scale --skip-bic        # vol dampening + multi-scale geo
+python3 run.py --expanding --skip-bic                       # expanding-window honest backtest (~5-10 mins)
+```
 
-# Walk-forward out-of-sample validation (~10 mins, 10 folds x 63 days)
-python3 run.py --skip-bic --walkforward
+```bash
+# Validation
+python3 run.py --walkforward --skip-bic                     # walk-forward OOS (10 folds x 63 days)
+python3 run.py --multi-asset --skip-bic                     # SPY, QQQ, IWM, TLT, GLD comparison
+```
 
-# Vol ratio dampening: suppress momentum when short-term vol > 2x long-term vol
-python3 run.py --vol-signal --skip-bic
+```bash
+# Generate reports (uses cached data, no API key needed once cached)
+python3 generate_report_v6.py       # v6 technical report (3 pages)
+python3 generate_report_3page.py    # plain-English overview (3 pages)
+python3 generate_report_quant.py    # full quant report (3 pages)
+```
 
-# Multi-scale geometric: average straightness ratio across 5, 15, 30-day windows
-python3 run.py --multi-scale --skip-bic
-
-# Expanding-window honest backtest: refit annually, no future data (~5-10 mins)
-python3 run.py --expanding --skip-bic
-
-# Combine: vol dampening + multi-scale + persistence filter
-python3 run.py --vol-signal --multi-scale --min-hold 3 --skip-bic
-
-# Multi-asset validation: SPY, QQQ, IWM, TLT, GLD (~3 mins)
-python3 run.py --multi-asset --skip-bic
-
-# Allow short on reversion days (signal is weak -- see limitations)
-python3 run.py --short --skip-bic
-
-# Generate the 3-page PDF report (uses cached data, no API key needed once cached)
-python3 generate_report_3page.py
-
-# Generate the 1-page v2 methodology update
-python3 generate_report.py
+```bash
+# Research / experimental
+python3 run.py --fetch-vix --vix-signal --skip-bic          # VIX dampening (paid Polygon plan)
+python3 run.py --short --skip-bic                           # allow short on reversion (signal weak)
+python3 run.py --min-hold 3 --skip-bic                      # persistence filter: 3-day minimum hold
+python3 run.py --vol-signal --multi-scale --min-hold 3 --skip-bic  # combined v6 + persistence
 ```
 
 Outputs are saved to `outputs/` and prefixed with `{ticker}_{from}_{to}_`.
@@ -133,8 +135,8 @@ Outputs are saved to `outputs/` and prefixed with `{ticker}_{from}_{to}_`.
 These are not afterthoughts — they are the primary reasons results should not be extrapolated.
 
 1. **Strategy underperforms B&H on raw CAGR** — +5.7% vs +8.6% over 25 years. The edge is a better Sharpe (0.68 vs 0.44) and dramatically lower drawdown. The signal is statistically significant (T=3.13, p=0.002).
-2. **Transaction costs are material** — ~20 regime switches/year means costs compound. Strategy is profitable to ~15bps round-trip; breaks even around 20bps.
-3. **In-sample threshold calibration** — percentile thresholds and ensemble cutoffs were tuned on the full dataset. Real-time use requires expanding-window recalibration.
+2. **Transaction costs are material** — ~20 regime switches/year means costs compound. Strategy is profitable to ~15 bps round-trip; breaks even around 20 bps.
+3. **In-sample threshold calibration** — percentile thresholds and ensemble cutoffs were tuned on the full dataset. Real-time use requires expanding-window recalibration (see `--expanding`).
 4. **Reversion signal is not significant** — reversion p=0.73 over 25 years. The `--short` flag exists for research only.
 5. **Single asset** — SPY only. Regime structure may not generalise to other assets or markets.
 
@@ -144,58 +146,58 @@ These are not afterthoughts — they are the primary reasons results should not 
 
 ```
 regime_ensemble/
-├── run.py                    -- main entry point (backtest + charts)
-├── generate_report_3page.py  -- 3-page plain-English PDF report (2000-2025)
-├── generate_report_quant.py  -- 3-page technical quant PDF report (2000-2025)
-├── generate_report.py        -- 1-page v2 methodology update PDF
+├── run.py                      -- main entry point (backtest + charts)
+├── generate_report_3page.py    -- 3-page plain-English PDF report
+├── generate_report_quant.py    -- 3-page technical quant PDF report
+├── generate_report_v6.py       -- 3-page v6 technical PDF report
+├── generate_report_v4v5.py     -- 2-page v4/v5 changes PDF report
+├── generate_report.py          -- v2 methodology one-pager (historical)
 ├── requirements.txt
-├── .env.example              -- copy to .env, add POLYGON_API_KEY
+├── .env.example                -- copy to .env, add POLYGON_API_KEY
 ├── src/
-│   ├── data.py               -- Polygon.io fetcher, CSV cache, multi-ticker support
-│   ├── geometric.py          -- straightness ratio, adaptive thresholds
-│   ├── markov.py             -- Markov k=3, BIC selection, filtered probabilities
-│   ├── ensemble.py           -- combine signals, crisis override
-│   ├── backtest.py           -- backtest engine, cost sensitivity, performance stats
-│   ├── walkforward.py        -- walk-forward OOS validation (v2: fully OOS)
-│   └── expanding.py          -- expanding-window honest backtest (v6)
+│   ├── data.py                 -- Polygon.io fetcher, CSV cache, multi-ticker support
+│   ├── geometric.py            -- straightness ratio, adaptive thresholds, multi-scale
+│   ├── markov.py               -- Markov k=3, BIC selection, filtered probabilities
+│   ├── ensemble.py             -- combine signals, vol dampening, crisis override
+│   ├── backtest.py             -- backtest engine, cost sensitivity, performance stats
+│   ├── walkforward.py          -- walk-forward OOS validation (10 x 63-day folds)
+│   └── expanding.py            -- expanding-window honest backtest (annual refit)
 ├── docs/
-│   ├── SPY_3page_report.pdf  -- 3-page overview report
-│   ├── v2_methodology_report.pdf -- v2 methodology update
-│   ├── regime_overview.png   -- SPY price coloured by regime
-│   └── equity_curves.png     -- strategy vs buy-and-hold
-└── data/cache/               -- cached CSV files (gitignored)
+│   ├── SPY_3page_report.pdf    -- plain-English overview (v5)
+│   ├── SPY_quant_report.pdf    -- full technical quant report (v5)
+│   ├── SPY_v6_report.pdf       -- v6 features technical report
+│   ├── v4v5_changes_report.pdf -- v4/v5 methodology changes
+│   ├── equity_curves.png       -- strategy vs buy-and-hold
+│   └── regime_overview.png     -- SPY price coloured by regime
+└── data/cache/                 -- cached CSV files (gitignored)
 ```
 
 ---
 
 ## Changelog
 
-### v6.0
-- **Vol ratio dampening** (`--vol-signal`) — 5-day / 63-day realised vol ratio suppresses the Markov momentum signal when short-term vol exceeds 2× the baseline. Active on ~11% of trading days. Endogenous (no API required), orthogonal to existing signals.
+### v6.0 (latest)
+- **Vol ratio dampening** (`--vol-signal`) — 5-day / 63-day realised vol ratio suppresses the Markov momentum signal when short-term vol exceeds 2x the baseline. Active on ~11% of trading days. Endogenous (no API required), orthogonal to existing signals.
 - **Multi-scale geometric** (`--multi-scale`) — averages the straightness ratio across 5, 15, and 30-day windows before thresholding. More robust across volatility regimes; reduces single-window noise.
-- **Expanding-window honest backtest** (`--expanding`) — refits geometric thresholds and Markov model annually on all data up to that date. Shows what the strategy would have returned live vs the in-sample backtest, quantifying optimism bias.
+- **Expanding-window honest backtest** (`--expanding`) — refits geometric thresholds and Markov model annually on all data up to that date. Optimism bias vs in-sample = 0.03 Sharpe points (small gap).
 
 ### v5.0
-- **Walk-forward OOS equity curve** (`--walkforward`) — all 10 fold returns stitched into a continuous out-of-sample equity curve saved as `{ticker}_walkforward_oos.png`.
+- **Walk-forward OOS equity curve** (`--walkforward`) — all 10 fold returns stitched into a continuous out-of-sample equity curve.
 - **Multi-asset validation** (`--multi-asset`) — runs on SPY, QQQ, IWM, TLT, GLD; prints comparison table and saves grouped bar chart.
 
 ### v4.0
-- **Half-position on mixed days** — "mixed" regime (detectors disagree) has T=3.21, p=0.001 on 25-year data. Changed from cash to +0.5 long. Sharpe improves from 0.29→0.68; strategy T-stat 1.32 (p=0.19)→3.13 (p=0.002).
-- **Regime persistence filter** (`--min-hold N`) — requires N consecutive days in a regime before the position switches. Default off. At `--min-hold 3`: profitable to ~20bps round-trip vs ~15bps unfiltered.
-- **Markov convergence fix** — `em_iter=200` with `search_reps=5` random starts eliminates `ConvergenceWarning` on 25-year data. Zero warnings in production.
-- **Updated reports** — both PDFs regenerated with v4.0 results; quant report cumulative decomposition now shows all 3 regime contributions; plain-English report rewritten to be less introductory.
+- **Half-position on mixed days** — mixed regime has T=3.21, p=0.001. Changed from cash to +0.5 long. Sharpe improves 0.29 → 0.68; strategy T-stat 1.32 (p=0.19) → 3.13 (p=0.002).
+- **Regime persistence filter** (`--min-hold N`) — requires N consecutive days before position switches. At `--min-hold 3`: profitable to ~20 bps vs ~15 bps unfiltered.
+- **Markov convergence fix** — `em_iter=200` with `search_reps=5` random starts eliminates ConvergenceWarning on 25-year data.
 
 ### v3.0
-- **Extended data to 2000–2025** — all reports and report generators now use the full 25-year history covering dot-com crash, GFC 2008, COVID 2020, and 2022 bear market.
-- **Half-position on mixed days** — "mixed" regime (when the two detectors disagree) has the strongest forward-return signal (T=3.21, p=0.001). Changed from cash to 0.5× long; Sharpe improves from 0.29 to 0.68, T-stat from 1.32 to 3.13.
-- **VIX signal integration** — `--vix-signal` flag adds VIX as a continuous dampening factor on the momentum signal (VIX ≤ 20 = no effect; VIX 30 = 50% dampening; VIX ≥ 40 = fully suppressed). Orthogonal to the existing Markov crisis override.
-- **Walk-forward extended to 10 folds** — `--walkforward` now runs 10 × 63-day folds (was 5), covering multiple distinct market cycles for more robust OOS validation.
+- Extended data to 2000-2025 — covers dot-com crash, GFC 2008, COVID 2020, and 2022 bear market.
+- VIX signal integration (`--vix-signal`) — VIX as continuous dampening factor on momentum signal.
+- Walk-forward extended to 10 folds.
 
 ### v2.0
-- **Fixed walk-forward leakage** — Markov EM now fitted on train-only data; test slice is forward-filtered with frozen parameters via `.filter(params)`. Geometric thresholds use the new `compute_thresholds()` helper for clean train/test isolation.
-- **Extended data pipeline** — default date range 2000-2025, `--ticker` flag for any Polygon ticker, `--fetch-vix` for `I:VIX` data, output files prefixed to avoid overwrites.
-- **`docs/` folder** — PDFs and charts committed to the repo for direct GitHub viewing.
-- **Report generators** — `generate_report_3page.py` and `generate_report.py` for reproducible PDF outputs.
+- Fixed walk-forward leakage — Markov EM now fitted on train-only data; test slice forward-filtered with frozen parameters.
+- Extended data pipeline — default range 2000-2025, `--ticker` flag for any Polygon ticker.
 
 ### v1.0
 - Initial release: geometric + Markov k=3 ensemble on SPY 2022-2025, walk-forward validation, transaction cost sensitivity.
