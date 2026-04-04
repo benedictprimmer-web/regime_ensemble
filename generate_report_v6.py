@@ -276,10 +276,9 @@ def make_page1():
     ax2.tick_params(axis="x", labelsize=7.5)
     ax2.legend(fontsize=7, loc="lower right", framealpha=0.85)
     _style(ax2)
-    _tc(ax2, "Multi-Scale Geometric: Window Comparison  (126-day MA for clarity)",
-        "All three windows are averaged to form the multi-scale ratio. "
-        "The 5-day window is most reactive; 30-day captures sustained trends. "
-        "Averaging reduces single-window noise.")
+    _tc(ax2, "Multi-Scale Geometric: Window Comparison",
+        "126-day MA shown for clarity. 5-day window is most reactive; "
+        "30-day captures sustained trends. Averaging reduces single-window noise.")
     fig.autofmt_xdate(rotation=25, ha="right")
 
     # -- Panel 3: Regime distribution comparison -----------------------------
