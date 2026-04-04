@@ -467,6 +467,22 @@ def main() -> None:
         n = dist.get(name, 0)
         print(f"  {name:<12s}  {n:4d} days  ({n / len(labels) * 100:.1f}%)")
 
+    # Vol/crisis overlap diagnostic — shows how much incremental work the vol
+    # dampening does beyond what the Markov crisis override already captures.
+    if vol_ratio_signal is not None:
+        from src.ensemble import VOL_RATIO_SUPPRESS
+        vol_high    = (vol_ratio_signal > VOL_RATIO_SUPPRESS).reindex(labels.index).fillna(False)
+        crisis_high = (crisis_prob > 0.50).reindex(labels.index).fillna(False)
+        n_vol       = vol_high.sum()
+        n_crisis    = crisis_high.sum()
+        n_both      = (vol_high & crisis_high).sum()
+        n_vol_only  = (vol_high & ~crisis_high).sum()
+        print(f"\n  Vol/crisis overlap diagnostic  (vol ratio threshold = {VOL_RATIO_SUPPRESS:.1f}x):")
+        print(f"    Vol ratio > {VOL_RATIO_SUPPRESS:.1f}x active:    {n_vol:4d} days  ({n_vol / len(labels) * 100:.1f}%)")
+        print(f"    P(crisis) > 0.50 active: {n_crisis:4d} days  ({n_crisis / len(labels) * 100:.1f}%)")
+        print(f"    Both active (overlap):   {n_both:4d} days  ({n_both / max(n_vol, 1) * 100:.0f}% of vol-high days)")
+        print(f"    Vol-only (incremental):  {n_vol_only:4d} days  -- days suppressed by vol but not by crisis override")
+
     # ── 6. Forward Return Statistics ────────────────────────────────────
     _section("6. FORWARD RETURN STATISTICS  (next-day return by regime)")
     forward_ret = ret.shift(-1).rename("log_return")
@@ -498,6 +514,28 @@ def main() -> None:
         bt_c   = run_backtest(ret, labels, allow_short=False, cost_bps=bps, min_hold_days=args.min_hold)
         perf_c = compute_stats(bt_c)["Strategy (Long Only)"]
         print(f"  {bps:>6d}bps  {perf_c['CAGR']:>8s}  {perf_c['Sharpe']:>8s}  {perf_c['Max DD']:>8s}")
+
+    # Sub-period Sharpe breakdown — shows whether the edge is concentrated in
+    # one crisis period (e.g. 2008, 2020) or consistent across the full sample.
+    print("\n  Sub-period Sharpe breakdown (5-year windows):")
+    print(f"  {'Period':<12}  {'Strategy':>9}  {'Buy & Hold':>10}  {'Edge':>5}")
+    start_year = bt.index[0].year
+    end_year   = bt.index[-1].year
+    any_row = False
+    for yr in range(start_year, end_year, 5):
+        mask   = (bt.index.year >= yr) & (bt.index.year < yr + 5)
+        sl     = bt[mask]
+        if len(sl) < 63:
+            continue
+        s_r  = sl["strategy_return"]
+        b_r  = sl["bnh_return"]
+        s_sh = (s_r.mean() * 252) / (s_r.std() * np.sqrt(252)) if s_r.std() > 0 else float("nan")
+        b_sh = (b_r.mean() * 252) / (b_r.std() * np.sqrt(252)) if b_r.std() > 0 else float("nan")
+        edge = "+" if (not np.isnan(s_sh) and not np.isnan(b_sh) and s_sh > b_sh) else " "
+        print(f"  {yr}-{min(yr+4, end_year):<8}  {s_sh:>+9.2f}  {b_sh:>+10.2f}  {edge}")
+        any_row = True
+    if not any_row:
+        print("  (insufficient data for sub-period breakdown — need >= 63 days per window)")
 
     # ── 8. Walk-Forward OOS Validation ─────────────────────────────────
     extra_sections = 0

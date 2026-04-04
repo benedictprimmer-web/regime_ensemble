@@ -139,12 +139,12 @@ def make_page1():
     t = np.arange(60)
     trend  = 0.002 * t + 0.012 * np.random.randn(60).cumsum()
     choppy = 0.012 * np.random.randn(60).cumsum()
-    ax1.plot(t[:30], trend[:30],  color=C["momentum"],  lw=1.8, label="Trending")
-    ax1.plot(t[30:], choppy[30:] + trend[29], color=C["reversion"], lw=1.8, label="Choppy")
+    ax1.plot(t[:30], trend[:30],  color=C["momentum"],  lw=1.8)
+    ax1.plot(t[30:], choppy[30:] + trend[29], color=C["reversion"], lw=1.8)
     ax1.axvline(30, color=C["subtext"], lw=0.8, ls="--")
-    ax1.text(15, ax1.get_ylim()[1] * 0.85, "Trending", ha="center",
+    ax1.text(0.25, 0.88, "Trending", ha="center", transform=ax1.transAxes,
              fontsize=8, color=C["momentum"], fontweight="bold")
-    ax1.text(45, ax1.get_ylim()[1] * 0.85, "Choppy", ha="center",
+    ax1.text(0.75, 0.88, "Choppy", ha="center", transform=ax1.transAxes,
              fontsize=8, color=C["reversion"], fontweight="bold")
     ax1.set_xticks([]); ax1.set_yticks([])
     ax1.spines[["top", "right"]].set_visible(False)
@@ -370,7 +370,7 @@ def make_page3():
                                transform=fig.transFigure, color="#dde", lw=1))
 
     gs = gridspec.GridSpec(3, 2, figure=fig, left=0.09, right=0.95,
-                           top=0.87, bottom=0.06, hspace=0.90, wspace=0.38)
+                           top=0.87, bottom=0.06, hspace=0.90, wspace=0.55)
 
     # ── Panel 1: Equity curves ─────────────────────────────────────────────
     ax1 = fig.add_subplot(gs[0, :])
@@ -402,7 +402,8 @@ def make_page3():
     ax2.spines[["top", "right"]].set_visible(False)
     ax2.tick_params(axis="x", labelsize=7)
     _section_title(ax2, "Drawdown Comparison")
-    _caption(ax2, "Strategy reduces drawdowns across all major crashes (dot-com, GFC, COVID, 2022).", y=-0.30)
+    ax2.text(0.0, -0.17, "Strategy reduces drawdowns across all major crashes\n(dot-com, GFC, COVID, 2022).",
+             transform=ax2.transAxes, fontsize=7.5, color=C["subtext"], ha="left", style="italic")
 
     # ── Panel 3: Transaction cost sensitivity ─────────────────────────────
     ax3 = fig.add_subplot(gs[1, 1])
@@ -427,7 +428,8 @@ def make_page3():
     ax3.spines[["top", "right"]].set_visible(False)
     ax3.tick_params(labelsize=8)
     _section_title(ax3, "Transaction Cost Sensitivity")
-    _caption(ax3, "~%.0f regime switches/year (ensemble label changes). Sharpe exceeds B&H to ~%dbps;\nbreaks even at ~%dbps. Use --min-hold 3 to cut switches and extend the profitable range." % (ensemble_switches_pa, beats_bnh_bps, breakeven_bps), y=-0.32)
+    ax3.text(0.0, -0.17, "~%.0f switches/yr; Sharpe > B&H to ~%dbps; breaks even at ~%dbps.\nUse --min-hold 3 to cut switches and extend the profitable range." % (ensemble_switches_pa, beats_bnh_bps, breakeven_bps),
+             transform=ax3.transAxes, fontsize=7.5, color=C["subtext"], ha="left", style="italic")
 
     # ── Panel 4: Limitations ──────────────────────────────────────────────
     ax4 = fig.add_subplot(gs[2, :])

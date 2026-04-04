@@ -21,16 +21,13 @@ Interpretation:
     size (~60-75 obs per test fold).
 """
 
-import warnings
 import numpy as np
 import pandas as pd
 from scipy import stats
-import statsmodels.api as sm
-from statsmodels.tools.sm_exceptions import EstimationWarning
 
 from src.geometric import straightness_ratio, geometric_signal, compute_thresholds
 from src.ensemble  import ensemble_score, regime_labels
-from src.markov    import AR_ORDER
+from src.markov    import fit_and_filter_markov
 from src.backtest  import run_backtest
 
 
@@ -82,50 +79,8 @@ def walk_forward(
         geo_test = geometric_signal(test_ret, mom_thresh=mom_thresh, rev_thresh=rev_thresh)
 
         # ── Markov: train-only fit, forward-filter on test ─────────────
-        # Fit the Markov model on train data only. Then construct a new
-        # model instance over the test slice and call .filter(train_params)
-        # to run the Hamilton filter with frozen parameters — no EM on test.
         try:
-            model_train = sm.tsa.MarkovAutoregression(
-                train_ret.dropna(),
-                k_regimes=3,
-                order=AR_ORDER,
-                switching_ar=True,
-                switching_variance=True,
-            )
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", EstimationWarning)
-                res_train = model_train.fit(disp=False, em_iter=200)
-
-            consts     = [res_train.params.get(f"const[{i}]", 0) for i in range(3)]
-            mom_idx    = int(np.argmax(consts))
-            crisis_idx = int(np.argmin(consts))
-
-            # Forward-filter test slice with frozen train parameters
-            model_test = sm.tsa.MarkovAutoregression(
-                test_ret.dropna(),
-                k_regimes=3,
-                order=AR_ORDER,
-                switching_ar=True,
-                switching_variance=True,
-            )
-            res_test = model_test.filter(res_train.params)
-
-            filt = res_test.filtered_marginal_probabilities
-            if hasattr(filt, "iloc"):
-                test_idx = filt.index
-                probs    = filt.values
-            else:
-                probs    = np.array(filt)
-                ret_arr  = test_ret.dropna()
-                test_idx = ret_arr.index[len(ret_arr) - len(probs):]
-
-            mom_prob_test    = pd.Series(probs[:, mom_idx],    index=test_idx)
-            crisis_prob_test = pd.Series(probs[:, crisis_idx], index=test_idx)
-
-            mom_prob_test    = mom_prob_test.reindex(test_ret.index)
-            crisis_prob_test = crisis_prob_test.reindex(test_ret.index)
-
+            mom_prob_test, crisis_prob_test = fit_and_filter_markov(train_ret, test_ret)
         except Exception as e:
             print(f"    Markov fit failed: {e} — using geometric only")
             mom_prob_test    = pd.Series(geo_test.values * 0.5, index=test_ret.index)

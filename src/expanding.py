@@ -25,15 +25,12 @@ Comparison to in-sample backtest:
     A small gap (< 0.1 Sharpe) suggests the signal is robust.
 """
 
-import warnings
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
-from statsmodels.tools.sm_exceptions import EstimationWarning
 
 from src.geometric import geometric_signal, compute_thresholds, MULTI_WINDOWS
 from src.ensemble  import ensemble_score, regime_labels
-from src.markov    import AR_ORDER
+from src.markov    import fit_and_filter_markov
 from src.backtest  import run_backtest
 
 
@@ -101,44 +98,7 @@ def expanding_backtest(
 
         # -- Markov: fit on train, forward-filter test -----------------------
         try:
-            model_train = sm.tsa.MarkovAutoregression(
-                train_ret.dropna(),
-                k_regimes=3,
-                order=AR_ORDER,
-                switching_ar=True,
-                switching_variance=True,
-            )
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", EstimationWarning)
-                res_train = model_train.fit(disp=False, em_iter=200)
-
-            consts     = [res_train.params.get("const[%d]" % i, 0) for i in range(3)]
-            mom_idx    = int(np.argmax(consts))
-            crisis_idx = int(np.argmin(consts))
-
-            model_test = sm.tsa.MarkovAutoregression(
-                test_ret.dropna(),
-                k_regimes=3,
-                order=AR_ORDER,
-                switching_ar=True,
-                switching_variance=True,
-            )
-            res_test = model_test.filter(res_train.params)
-
-            filt = res_test.filtered_marginal_probabilities
-            if hasattr(filt, "iloc"):
-                test_idx = filt.index
-                probs    = filt.values
-            else:
-                probs    = np.array(filt)
-                ret_arr  = test_ret.dropna()
-                test_idx = ret_arr.index[len(ret_arr) - len(probs):]
-
-            mom_prob_test    = pd.Series(probs[:, mom_idx],    index=test_idx)
-            crisis_prob_test = pd.Series(probs[:, crisis_idx], index=test_idx)
-            mom_prob_test    = mom_prob_test.reindex(test_ret.index)
-            crisis_prob_test = crisis_prob_test.reindex(test_ret.index)
-
+            mom_prob_test, crisis_prob_test = fit_and_filter_markov(train_ret, test_ret)
         except Exception as e:
             if verbose:
                 print("    Markov fit failed: %s -- using geometric only" % e)

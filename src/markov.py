@@ -85,6 +85,8 @@ def fit_markov3(returns: pd.Series, verbose: bool = True):
     # Eliminates ConvergenceWarning on long datasets (25 years needs more
     # EM iterations). EstimationWarning (probability re-scaling in some
     # random starts) is suppressed -- it is numerical noise, not a failure.
+    # Seed before EM so results are reproducible across runs.
+    np.random.seed(42)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", EstimationWarning)
         results = model.fit(disp=False, em_iter=200, search_reps=5)
@@ -122,6 +124,22 @@ def fit_markov3(returns: pd.Series, verbose: bool = True):
         mean_r = float(np.dot(w_norm, ret_arr))
         vol    = float(np.sqrt(np.dot(w_norm, (ret_arr - mean_r) ** 2)) * np.sqrt(252))
         regime_stats[name] = {"mean": mean_r, "vol": vol}
+
+    # ── Sanity checks: warn if regime ordering looks degenerate ──────────
+    if regime_stats["MOMENTUM"]["mean"] < 0:
+        warnings.warn(
+            "MOMENTUM regime has negative mean return — EM may have converged to a "
+            "degenerate solution. Consider re-running; check const parameters.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    if regime_stats["CRISIS"]["mean"] > 0:
+        warnings.warn(
+            "CRISIS regime has positive mean return — regime ordering may be inverted. "
+            "Check const parameters.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     if verbose:
         print("\n  Markov k=3 regime characteristics:")
@@ -187,3 +205,63 @@ def fit_markov3(returns: pd.Series, verbose: bool = True):
             print(f"\n  [transition matrix unavailable: {e}]")
 
     return mom_prob, crisis_prob, choppy_prob, trans_info
+
+
+def fit_and_filter_markov(
+    train_ret: pd.Series,
+    test_ret: pd.Series,
+) -> tuple:
+    """
+    Fit Markov AR(1) k=3 on train_ret, then forward-filter on test_ret.
+
+    Used by walk-forward and expanding-window validation to avoid duplicating
+    Markov fitting logic. The EM is run on train data only; the Hamilton filter
+    is applied to test data with frozen train parameters — no look-ahead bias.
+
+    Args:
+        train_ret : training slice daily log returns
+        test_ret  : test slice daily log returns
+
+    Returns:
+        (mom_prob, crisis_prob) as pd.Series aligned to test_ret.index.
+        Raises on failure — callers should wrap in try/except and fall back
+        to geometric-only if needed.
+    """
+    model_train = sm.tsa.MarkovAutoregression(
+        train_ret.dropna(),
+        k_regimes=3,
+        order=AR_ORDER,
+        switching_ar=True,
+        switching_variance=True,
+    )
+    np.random.seed(42)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", EstimationWarning)
+        res_train = model_train.fit(disp=False, em_iter=200)
+
+    p = res_train.params
+    consts     = [p.get(f"const[{i}]", 0) for i in range(3)]
+    mom_idx    = int(np.argmax(consts))
+    crisis_idx = int(np.argmin(consts))
+
+    model_test = sm.tsa.MarkovAutoregression(
+        test_ret.dropna(),
+        k_regimes=3,
+        order=AR_ORDER,
+        switching_ar=True,
+        switching_variance=True,
+    )
+    res_test = model_test.filter(res_train.params)
+
+    filt = res_test.filtered_marginal_probabilities
+    if hasattr(filt, "iloc"):
+        test_idx = filt.index
+        probs    = filt.values
+    else:
+        probs    = np.array(filt)
+        ret_arr  = test_ret.dropna()
+        test_idx = ret_arr.index[len(ret_arr) - len(probs):]
+
+    mom_prob    = pd.Series(probs[:, mom_idx],    index=test_idx).reindex(test_ret.index)
+    crisis_prob = pd.Series(probs[:, crisis_idx], index=test_idx).reindex(test_ret.index)
+    return mom_prob, crisis_prob
