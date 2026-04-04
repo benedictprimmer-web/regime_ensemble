@@ -138,7 +138,7 @@ These are not afterthoughts — they are the primary reasons results should not 
 2. **Transaction costs are material** — ~20 regime switches/year means costs compound. Strategy is profitable to ~15 bps round-trip; breaks even around 20 bps.
 3. **In-sample threshold calibration** — percentile thresholds and ensemble cutoffs were tuned on the full dataset. Real-time use requires expanding-window recalibration (see `--expanding`).
 4. **Reversion signal is not significant** — reversion p=0.73 over 25 years. The `--short` flag exists for research only.
-5. **Single asset** — SPY only. Regime structure may not generalise to other assets or markets.
+5. **Calibrated on SPY** — thresholds and Markov parameters are fitted on SPY. The `--multi-asset` flag applies the same model to QQQ, IWM, TLT, and GLD as a validation check, but each asset's regime structure differs and results vary. A proper multi-asset deployment would require per-asset calibration.
 
 ---
 
