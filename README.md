@@ -19,7 +19,7 @@ SPY · 2000–2025 · zero transaction costs · 1-day execution lag · **v5 core
 | Max Drawdown | **-16.7%** | -56.5% |
 | T-stat (p-value) | 3.13 (p=0.002) | 2.02 (p=0.043) |
 
-> **Strategy = full long on momentum, half-long on mixed, cash on reversion.** Sharpe beats buy-and-hold (0.68 vs 0.44) with dramatically lower drawdown (-16.7% vs -56.5%). Remains profitable at 10 bps round-trip (Sharpe 0.28). At 20 bps it breaks even.
+> **Strategy = full long on momentum, half-long on mixed, cash on reversion.** Sharpe beats buy-and-hold (0.68 vs 0.44) with dramatically lower drawdown (-16.7% vs -56.5%). Sharpe exceeds B&H to ~12 bps round-trip; strategy break-even is ~17 bps.
 
 v6.0 adds vol-ratio dampening, multi-scale geometric, and expanding-window OOS validation — see the [v6 technical report](docs/SPY_v6_report.pdf) for those results.
 
@@ -135,7 +135,7 @@ Outputs are saved to `outputs/` and prefixed with `{ticker}_{from}_{to}_`.
 These are not afterthoughts — they are the primary reasons results should not be extrapolated.
 
 1. **Strategy underperforms B&H on raw CAGR** — +5.7% vs +8.6% over 25 years. The edge is a better Sharpe (0.68 vs 0.44) and dramatically lower drawdown. The signal is statistically significant (T=3.13, p=0.002).
-2. **Transaction costs are material** — ~20 regime switches/year means costs compound. Strategy is profitable to ~15 bps round-trip; breaks even around 20 bps.
+2. **Transaction costs are material** — ~61 ensemble label switches/year means costs compound. Sharpe exceeds B&H to ~12 bps round-trip; strategy breaks even at ~17 bps. The earlier figure of ~20 switches/year referred to Markov internal state transitions, not the trading signal changes that actually drive costs.
 3. **In-sample threshold calibration** — percentile thresholds and ensemble cutoffs were tuned on the full dataset. Real-time use requires expanding-window recalibration (see `--expanding`).
 4. **Reversion signal is not significant** — reversion p=0.73 over 25 years. The `--short` flag exists for research only.
 5. **Calibrated on SPY** — thresholds and Markov parameters are fitted on SPY. The `--multi-asset` flag applies the same model to QQQ, IWM, TLT, and GLD as a validation check, but each asset's regime structure differs and results vary. A proper multi-asset deployment would require per-asset calibration.

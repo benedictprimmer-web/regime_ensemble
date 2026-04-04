@@ -92,6 +92,21 @@ for reg in ["momentum", "mixed", "reversion"]:
     t, p = scipy_stats.ttest_1samp(r, 0) if len(r) > 5 else (float("nan"), float("nan"))
     regime_fwd[reg] = {"n": len(r), "mean_pct": r.mean() * 100, "t": t, "p": p}
 
+# Ensemble switches/year (position changes, not Markov internal transitions)
+ensemble_switches_pa = (labels != labels.shift(1)).sum() / (len(labels) / 252)
+
+# Break-even cost (Sharpe = 0 crossover) and beats-B&H threshold
+_bnh_sharpe = float(compute_stats(bt)["Buy & Hold"]["Sharpe"])
+_bps_range  = list(range(0, 31))
+_cost_sharpes = [
+    float(compute_stats(run_backtest(ret, labels, allow_short=False, cost_bps=b))
+          ["Strategy (Long Only)"]["Sharpe"])
+    for b in _bps_range
+]
+import numpy as _np
+breakeven_bps = int(_bps_range[_np.argmin(_np.abs(_np.array(_cost_sharpes)))])
+beats_bnh_bps = int(_bps_range[_np.argmin(_np.abs(_np.array(_cost_sharpes) - _bnh_sharpe))])
+
 print("  Models ready. Generating report...")
 
 
@@ -110,7 +125,7 @@ def make_page1():
     fig.text(0.5, 0.925, "Detecting market conditions to reduce risk — not just maximise returns",
              ha="center", fontsize=10, color=C["subtext"])
     fig.text(0.5, 0.906,
-             f"SPY  ·  {FROM_DATE[:4]}–{TO_DATE[:4]}  ·  v3.1",
+             f"SPY  ·  {FROM_DATE[:4]}--{TO_DATE[:4]}  ·  v5.0",
              ha="center", fontsize=8.5, color=C["subtext"])
 
     # ── Divider ───────────────────────────────────────────────────────────
@@ -243,11 +258,11 @@ def make_page1():
     ax5.axline((0, 0.78), slope=0, color="#dde", lw=0.8,
                transform=ax5.transAxes)
     ax5.text(0.0, 0.12,
-             "⚠  At 10bps round-trip costs, Sharpe drops to 0.28. Strategy breaks even around 20bps. "
-             "Transaction costs are material — see page 3.",
+             "⚠  At 10bps round-trip costs, Sharpe drops to 0.28. "
+             "Strategy breaks even around %dbps. Transaction costs are material -- see page 3." % breakeven_bps,
              transform=ax5.transAxes, fontsize=7.5, color=C["gold"], va="top")
 
-    fig.text(0.5, 0.02, "Page 1 of 3  ·  regime_ensemble v4.0  ·  github.com/benedictprimmer-web/regime_ensemble",
+    fig.text(0.5, 0.02, "Page 1 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
              ha="center", fontsize=6.5, color=C["subtext"])
     return fig
 
@@ -335,7 +350,7 @@ def make_page2():
              "Filtered probabilities only — no look-ahead bias.")
 
     fig.autofmt_xdate(rotation=25, ha="right")
-    fig.text(0.5, 0.02, "Page 2 of 3  ·  regime_ensemble v4.0  ·  github.com/benedictprimmer-web/regime_ensemble",
+    fig.text(0.5, 0.02, "Page 2 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
              ha="center", fontsize=6.5, color=C["subtext"])
     return fig
 
@@ -415,7 +430,7 @@ def make_page3():
     ax3.spines[["top", "right"]].set_visible(False)
     ax3.tick_params(labelsize=8)
     _section_title(ax3, "Transaction Cost Sensitivity")
-    _caption(ax3, "~20 regime switches/year. Strategy Sharpe exceeds B&H to ~15bps;\nbreaks even at ~20bps. Use --min-hold 3 to cut switches and extend the range.", y=-0.32)
+    _caption(ax3, "~%.0f regime switches/year (ensemble label changes). Sharpe exceeds B&H to ~%dbps;\nbreaks even at ~%dbps. Use --min-hold 3 to cut switches and extend the profitable range." % (ensemble_switches_pa, beats_bnh_bps, breakeven_bps), y=-0.32)
 
     # ── Panel 4: Limitations ──────────────────────────────────────────────
     ax4 = fig.add_subplot(gs[2, :])
@@ -423,10 +438,12 @@ def make_page3():
     _section_title(ax4, "Key Limitations — Read Before Drawing Conclusions")
 
     limits = [
-        ("Single asset, no out-of-sample generalisation test",
-         "25 years of SPY. Regime structure is not validated on other tickers, sectors, or international markets."),
+        ("Calibrated on SPY -- multi-asset validation available",
+         "Thresholds and Markov parameters are fitted on SPY. Use --multi-asset to run cross-validation "
+         "on QQQ, IWM, TLT, GLD as a robustness check (not a per-asset recalibration)."),
         ("Transaction costs constrain the edge",
-         "~20 switches/year. Sharpe >B&H up to ~15bps round-trip. Use --min-hold 3 to extend profitability to ~20bps."),
+         "~%.0f ensemble switches/year. Sharpe >B&H up to ~%dbps round-trip; "
+         "breaks even at ~%dbps. Use --min-hold 3 to reduce switches." % (ensemble_switches_pa, beats_bnh_bps, breakeven_bps)),
         ("In-sample threshold calibration",
          "Percentile thresholds (70th/30th) and ensemble cutoffs are fit on the full dataset. A real deployment "
          "requires expanding-window recalibration from a fixed start date."),
@@ -444,7 +461,7 @@ def make_page3():
         ax4.text(0.01, y - 0.07, f"    {body}", transform=ax4.transAxes,
                  fontsize=7.8, color=C["subtext"], va="top")
 
-    fig.text(0.5, 0.02, "Page 3 of 3  ·  regime_ensemble v4.0  ·  github.com/benedictprimmer-web/regime_ensemble",
+    fig.text(0.5, 0.02, "Page 3 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
              ha="center", fontsize=6.5, color=C["subtext"])
     return fig
 

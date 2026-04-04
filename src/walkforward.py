@@ -36,7 +36,7 @@ from src.backtest  import run_backtest
 
 def walk_forward(
     returns: pd.Series,
-    n_folds: int  = 5,
+    n_folds: int  = 10,
     test_size: int = 63,   # ~1 quarter of trading days
 ) -> tuple:
     """

@@ -91,7 +91,7 @@ def _hline(ax, y, **kwargs):
 def _footer(fig, page, total=3):
     fig.text(
         0.5, 0.012,
-        "Page %d of %d  -  regime_ensemble v4.0  -  SPY %s-%s  -  "
+        "Page %d of %d  -  regime_ensemble v5.0  -  SPY %s-%s  -  "
         "github.com/benedictprimmer-web/regime_ensemble" % (
             page, total, FROM_DATE[:4], TO_DATE[:4]),
         ha="center", fontsize=6, color=C["subtext"],
@@ -152,13 +152,15 @@ strat_ret = bt["strategy_return"].dropna()
 bnh_ret   = bt["bnh_return"].dropna()
 
 def extended_metrics(r):
+    """Extended performance metrics using log-return arithmetic (consistent with compute_stats)."""
     ann    = 252
-    cagr   = (1 + r).prod() ** (ann / len(r)) - 1
+    n      = len(r)
+    cagr   = np.exp(r.sum()) ** (ann / n) - 1
     vol    = r.std() * np.sqrt(ann)
-    sharpe = cagr / vol if vol > 0 else 0
+    sharpe = (r.mean() * ann) / vol if vol > 0 else 0
     neg    = r[r < 0]
-    sortino = cagr / (neg.std() * np.sqrt(ann)) if len(neg) > 0 else np.nan
-    eq      = (1 + r).cumprod()
+    sortino = (r.mean() * ann) / (neg.std() * np.sqrt(ann)) if len(neg) > 0 else np.nan
+    eq      = np.exp(r.cumsum())
     dd      = eq / eq.cummax() - 1
     max_dd  = dd.min()
     calmar  = cagr / abs(max_dd) if max_dd != 0 else np.nan
@@ -179,6 +181,9 @@ def extended_metrics(r):
 
 strat_ext = extended_metrics(strat_ret)
 bnh_ext   = extended_metrics(bnh_ret)
+
+# Ensemble label switches/year (position changes, not Markov internal transitions)
+ensemble_switches_pa = (labels != labels.shift(1)).sum() / (len(labels) / 252)
 
 excess = strat_ret - bnh_ret
 ir     = (excess.mean() * 252) / (excess.std() * np.sqrt(252))
@@ -554,8 +559,8 @@ def make_page3():
     ax3.legend(fontsize=7.5, framealpha=0.85)
     _style(ax3)
     _title(ax3, "Sharpe vs Transaction Cost  (0-30 bps)",
-           sub="~%.0f regime switches/year  -  each switch incurs round-trip cost" %
-               trans_info.get("switches_pa", 22))
+           sub="~%.0f ensemble label switches/year  -  each switch incurs round-trip cost" %
+               ensemble_switches_pa)
 
     # Panel 4: Performance attribution table
     ax4 = fig.add_subplot(gs[2, :])
