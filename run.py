@@ -14,11 +14,15 @@ Usage:
     python run.py --skip-bic        # skip BIC model selection (saves ~30s)
     python run.py --walkforward     # run walk-forward OOS validation (~5 mins)
     python run.py --multi-asset     # run on SPY, QQQ, IWM, TLT, GLD (~3 mins)
+    python run.py --vol-signal      # add vol ratio dampening to ensemble
+    python run.py --multi-scale     # use multi-scale geometric (5/15/30-day windows)
+    python run.py --expanding       # expanding-window honest backtest (~5-10 mins)
 
 Outputs (saved to outputs/):
     {ticker}_{from_year}_{to_year}_regime_overview.png
     {ticker}_{from_year}_{to_year}_equity_curves.png
     {ticker}_{from_year}_{to_year}_walkforward_oos.png  (--walkforward only)
+    {ticker}_{from_year}_{to_year}_expanding_oos.png    (--expanding only)
     multi_asset_{from_year}_{to_year}_comparison.png    (--multi-asset only)
 """
 
@@ -36,11 +40,12 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
 from src.data        import fetch_daily_bars, log_returns, fetch_multi, vix_levels
-from src.geometric   import geometric_signal, straightness_ratio
+from src.geometric   import geometric_signal, straightness_ratio, MULTI_WINDOWS
 from src.markov      import fit_markov3, select_k
-from src.ensemble    import ensemble_score, regime_labels
+from src.ensemble    import ensemble_score, regime_labels, vol_ratio
 from src.backtest    import compute_stats, regime_return_stats, run_backtest
 from src.walkforward import walk_forward
+from src.expanding   import expanding_backtest
 
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -381,6 +386,9 @@ def main() -> None:
     parser.add_argument("--skip-bic",    action="store_true", help="Skip BIC model selection step (~60s)")
     parser.add_argument("--walkforward", action="store_true", help="Run walk-forward OOS validation (~5 mins)")
     parser.add_argument("--multi-asset", action="store_true", help="Run on SPY, QQQ, IWM, TLT, GLD (~3 mins)")
+    parser.add_argument("--vol-signal",  action="store_true", help="Add vol ratio dampening to ensemble (5-day/63-day realised vol)")
+    parser.add_argument("--multi-scale", action="store_true", help="Use multi-scale geometric signal (average across 5, 15, 30-day windows)")
+    parser.add_argument("--expanding",   action="store_true", help="Run expanding-window honest backtest (~5-10 mins)")
     args = parser.parse_args()
 
     if args.multi_asset:
@@ -418,8 +426,10 @@ def main() -> None:
         _section("2. BIC MODEL SELECTION  [skipped — k=3 pre-selected]")
 
     # ── 3. Geometric Signal ────────────────────────────────────────────
-    _section("3. GEOMETRIC SIGNAL  (straightness ratio, window=15)")
-    geo = geometric_signal(ret, window=15)
+    geo_windows = MULTI_WINDOWS if args.multi_scale else None
+    geo_desc = ("multi-scale windows=%s" % MULTI_WINDOWS) if args.multi_scale else "window=15"
+    _section("3. GEOMETRIC SIGNAL  (straightness ratio, %s)" % geo_desc)
+    geo = geometric_signal(ret, window=15, windows=geo_windows)
     counts = geo.value_counts()
     for val, name in [(1.0, "Momentum"), (0.5, "Mixed"), (0.0, "Reversion")]:
         n = counts.get(val, 0)
@@ -432,11 +442,24 @@ def main() -> None:
 
     # ── 5. Ensemble ────────────────────────────────────────────────────
     vix_signal = vix if args.vix_signal else None
-    ensemble_desc = "mean of geometric + Markov, crisis override at P>0.50"
+    vol_ratio_signal = vol_ratio(ret) if args.vol_signal else None
+
+    ensemble_parts = ["mean of geometric + Markov", "crisis override at P>0.50"]
     if vix_signal is not None:
-        ensemble_desc += ", VIX dampening active"
-    _section(f"5. ENSEMBLE  ({ensemble_desc})")
-    score  = ensemble_score(geo, mom_prob, crisis_prob, vix=vix_signal)
+        ensemble_parts.append("VIX dampening")
+    if vol_ratio_signal is not None:
+        ensemble_parts.append("vol ratio dampening (5d/63d)")
+    _section("5. ENSEMBLE  (%s)" % ", ".join(ensemble_parts))
+
+    if vol_ratio_signal is not None:
+        vr_mean = vol_ratio_signal.mean()
+        vr_pct_high = (vol_ratio_signal > 1.5).mean() * 100
+        print(f"  Vol ratio (5d/63d):  mean={vr_mean:.2f}  "
+              f"days with ratio>1.5 (dampening active): {vr_pct_high:.1f}%")
+
+    score  = ensemble_score(geo, mom_prob, crisis_prob,
+                            vix=vix_signal,
+                            vol_ratio_series=vol_ratio_signal)
     labels = regime_labels(score)
     dist   = labels.value_counts()
     print("  Ensemble regime distribution:")
@@ -477,6 +500,7 @@ def main() -> None:
         print(f"  {bps:>6d}bps  {perf_c['CAGR']:>8s}  {perf_c['Sharpe']:>8s}  {perf_c['Max DD']:>8s}")
 
     # ── 8. Walk-Forward OOS Validation ─────────────────────────────────
+    extra_sections = 0
     if args.walkforward:
         _section("8. WALK-FORWARD OOS VALIDATION  (10 folds x 63 days, fully OOS)")
         print("  Geometric: thresholds from train slice only.")
@@ -488,9 +512,61 @@ def main() -> None:
         print(f"\n  Momentum regime positive in {pos_folds}/{total} folds")
         print("  (>= 7/10 is consistent with signal having real predictive power)")
         plot_walkforward_equity(oos_returns, run_prefix=run_prefix, test_size=63)
-        charts_section = 9
-    else:
-        charts_section = 8
+        extra_sections += 1
+
+    # ── 9. Expanding-Window Honest Backtest ────────────────────────────
+    if args.expanding:
+        sec = 8 + extra_sections
+        _section(f"{sec}. EXPANDING-WINDOW BACKTEST  (annual refit, fully honest)")
+        print("  Refitting geometric thresholds + Markov annually on all data to that date.")
+        multi_scale_flag = args.multi_scale
+        print(f"  Geometric: {'multi-scale ' + str(MULTI_WINDOWS) if multi_scale_flag else 'window=15'}")
+        print("  Markov: em_iter=200 per refit. First live period after 2 years of data.\n")
+        exp_bt = expanding_backtest(ret, multi_scale=multi_scale_flag, verbose=True)
+
+        from src.backtest import compute_stats as _cs
+        exp_perf = _cs(exp_bt)
+        print("\n  Expanding-window results:")
+        for strategy_name, metrics in exp_perf.items():
+            print(f"  {strategy_name}:")
+            for k, v in metrics.items():
+                print(f"    {k:<12s}  {v}")
+            print()
+
+        in_sample_sharpe  = float(compute_stats(bt)["Strategy (Long Only)"]["Sharpe"])
+        exp_sharpe        = float(exp_perf["Strategy (Long Only)"]["Sharpe"])
+        print(f"  Optimism bias (in-sample vs expanding):  "
+              f"{in_sample_sharpe:.2f} vs {exp_sharpe:.2f}  "
+              f"(delta = {in_sample_sharpe - exp_sharpe:+.2f})")
+
+        # Plot expanding OOS equity curve
+        exp_eq_s = np.exp(exp_bt["strategy_return"].cumsum())
+        exp_eq_b = np.exp(exp_bt["bnh_return"].cumsum())
+        in_eq_s  = bt["equity_strategy"].reindex(exp_bt.index)
+        fig_exp, ax_exp = plt.subplots(figsize=(12, 5))
+        ax_exp.plot(exp_eq_b.index,  exp_eq_b,  color=COLORS["bnh"],      lw=1.5, label="Buy & Hold")
+        ax_exp.plot(exp_eq_s.index,  exp_eq_s,  color=COLORS["strategy"], lw=1.5, label="Strategy (expanding OOS)")
+        ax_exp.plot(in_eq_s.index,   in_eq_s,   color=COLORS["strategy"], lw=1.0,
+                    ls="--", alpha=0.5, label="Strategy (in-sample, for comparison)")
+        ax_exp.axhline(1.0, color="#bdc3c7", lw=0.6, ls="--")
+        ax_exp.set_ylabel("Equity (base = 1.0)", fontsize=9)
+        ax_exp.legend(fontsize=9)
+        ax_exp.set_title("Expanding-Window Honest Backtest vs In-Sample", fontsize=11)
+        ax_exp.text(0.01, 0.03,
+                    "Expanding: thresholds/Markov refitted annually on all prior data. "
+                    "No future data used. Zero transaction costs.",
+                    transform=ax_exp.transAxes, fontsize=7, color="#7f8c8d", style="italic")
+        ax_exp.spines[["top", "right"]].set_visible(False)
+        ax_exp.tick_params(axis="x", labelsize=8)
+        fig_exp.autofmt_xdate(rotation=30, ha="right")
+        fig_exp.tight_layout()
+        exp_path = OUTPUT_DIR / f"{run_prefix}_expanding_oos.png"
+        fig_exp.savefig(exp_path, dpi=150, bbox_inches="tight")
+        plt.close(fig_exp)
+        print(f"\n  Saved → {exp_path}")
+        extra_sections += 1
+
+    charts_section = 8 + extra_sections
 
     # ── Charts ────────────────────────────────────────────────────────
     _section(f"{charts_section}. CHARTS")

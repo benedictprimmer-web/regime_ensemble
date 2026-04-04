@@ -99,6 +99,21 @@ python3 run.py --fetch-vix --vix-signal --skip-bic
 # Walk-forward out-of-sample validation (~10 mins, 10 folds x 63 days)
 python3 run.py --skip-bic --walkforward
 
+# Vol ratio dampening: suppress momentum when short-term vol > 2x long-term vol
+python3 run.py --vol-signal --skip-bic
+
+# Multi-scale geometric: average straightness ratio across 5, 15, 30-day windows
+python3 run.py --multi-scale --skip-bic
+
+# Expanding-window honest backtest: refit annually, no future data (~5-10 mins)
+python3 run.py --expanding --skip-bic
+
+# Combine: vol dampening + multi-scale + persistence filter
+python3 run.py --vol-signal --multi-scale --min-hold 3 --skip-bic
+
+# Multi-asset validation: SPY, QQQ, IWM, TLT, GLD (~3 mins)
+python3 run.py --multi-asset --skip-bic
+
 # Allow short on reversion days (signal is weak -- see limitations)
 python3 run.py --short --skip-bic
 
@@ -141,7 +156,8 @@ regime_ensemble/
 │   ├── markov.py             -- Markov k=3, BIC selection, filtered probabilities
 │   ├── ensemble.py           -- combine signals, crisis override
 │   ├── backtest.py           -- backtest engine, cost sensitivity, performance stats
-│   └── walkforward.py        -- walk-forward OOS validation (v2: fully OOS)
+│   ├── walkforward.py        -- walk-forward OOS validation (v2: fully OOS)
+│   └── expanding.py          -- expanding-window honest backtest (v6)
 ├── docs/
 │   ├── SPY_3page_report.pdf  -- 3-page overview report
 │   ├── v2_methodology_report.pdf -- v2 methodology update
@@ -153,6 +169,15 @@ regime_ensemble/
 ---
 
 ## Changelog
+
+### v6.0
+- **Vol ratio dampening** (`--vol-signal`) — 5-day / 63-day realised vol ratio suppresses the Markov momentum signal when short-term vol exceeds 2× the baseline. Active on ~11% of trading days. Endogenous (no API required), orthogonal to existing signals.
+- **Multi-scale geometric** (`--multi-scale`) — averages the straightness ratio across 5, 15, and 30-day windows before thresholding. More robust across volatility regimes; reduces single-window noise.
+- **Expanding-window honest backtest** (`--expanding`) — refits geometric thresholds and Markov model annually on all data up to that date. Shows what the strategy would have returned live vs the in-sample backtest, quantifying optimism bias.
+
+### v5.0
+- **Walk-forward OOS equity curve** (`--walkforward`) — all 10 fold returns stitched into a continuous out-of-sample equity curve saved as `{ticker}_walkforward_oos.png`.
+- **Multi-asset validation** (`--multi-asset`) — runs on SPY, QQQ, IWM, TLT, GLD; prints comparison table and saves grouped bar chart.
 
 ### v4.0
 - **Half-position on mixed days** — "mixed" regime (detectors disagree) has T=3.21, p=0.001 on 25-year data. Changed from cash to +0.5 long. Sharpe improves from 0.29→0.68; strategy T-stat 1.32 (p=0.19)→3.13 (p=0.002).

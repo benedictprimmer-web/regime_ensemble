@@ -24,10 +24,12 @@ history — this is fine for the in-sample backtest but not for walk-forward.
 
 import numpy as np
 import pandas as pd
+from typing import List, Optional
 
 WINDOW          = 15   # 3 calendar weeks — captures short-term momentum
 MOMENTUM_PCT    = 70   # top 30% of distribution → momentum
 REVERSION_PCT   = 30   # bottom 30% of distribution → reversion
+MULTI_WINDOWS   = [5, 15, 30]   # default multi-scale windows (1wk, 3wk, 6wk)
 
 
 def straightness_ratio(returns: pd.Series, window: int = WINDOW) -> pd.Series:
@@ -43,11 +45,31 @@ def straightness_ratio(returns: pd.Series, window: int = WINDOW) -> pd.Series:
     return ratio.rename("straightness")
 
 
+def multi_scale_ratio(
+    returns: pd.Series,
+    windows: List[int] = MULTI_WINDOWS,
+) -> pd.Series:
+    """
+    Average straightness ratio across multiple windows.
+
+    Combining short (5-day), medium (15-day), and long (30-day) windows
+    reduces single-window noise: fast windows catch sharp reversals,
+    slow windows capture sustained trends. The average is smoother and
+    more robust across volatility regimes than any single window.
+
+    Returns:
+        Series of averaged ratios, aligned to returns.index.
+    """
+    ratios = [straightness_ratio(returns, w) for w in windows]
+    return pd.concat(ratios, axis=1).mean(axis=1).rename("straightness_multi")
+
+
 def compute_thresholds(
     returns: pd.Series,
     window: int          = WINDOW,
     momentum_pct: float  = MOMENTUM_PCT,
     reversion_pct: float = REVERSION_PCT,
+    windows: Optional[List[int]] = None,
 ) -> tuple:
     """
     Compute straightness ratio percentile thresholds from a data slice.
@@ -55,20 +77,27 @@ def compute_thresholds(
     Call this on the training slice, then pass the results to
     `geometric_signal()` to avoid look-ahead bias in walk-forward validation.
 
+    Args:
+        windows : if provided, use multi-scale averaged ratio (overrides window)
+
     Returns:
         (mom_thresh, rev_thresh) — float pair
     """
-    ratio = straightness_ratio(returns, window)
+    if windows is not None:
+        ratio = multi_scale_ratio(returns, windows)
+    else:
+        ratio = straightness_ratio(returns, window)
     return ratio.quantile(momentum_pct / 100), ratio.quantile(reversion_pct / 100)
 
 
 def geometric_signal(
     returns: pd.Series,
-    window: int          = WINDOW,
-    momentum_pct: float  = MOMENTUM_PCT,
-    reversion_pct: float = REVERSION_PCT,
-    mom_thresh: float    = None,
-    rev_thresh: float    = None,
+    window: int                   = WINDOW,
+    momentum_pct: float           = MOMENTUM_PCT,
+    reversion_pct: float          = REVERSION_PCT,
+    mom_thresh: float             = None,
+    rev_thresh: float             = None,
+    windows: Optional[List[int]]  = None,
 ) -> pd.Series:
     """
     Geometric regime signal as a 0/0.5/1 float.
@@ -77,14 +106,22 @@ def geometric_signal(
         0.5  mixed
         0.0  reversion (bottom reversion_pct% of ratio distribution)
 
-    Pass `mom_thresh` and `rev_thresh` (from `compute_thresholds()` on a
-    training slice) to avoid look-ahead bias in walk-forward validation.
-    When omitted, thresholds are computed on the full `returns` series.
+    Args:
+        windows    : if provided, use multi-scale averaged ratio across these
+                     windows (e.g. [5, 15, 30]) instead of single `window`.
+                     Overrides the `window` parameter.
+        mom_thresh : pre-computed threshold (from compute_thresholds on train
+                     slice) — avoids look-ahead in walk-forward validation.
+        rev_thresh : pre-computed threshold (same)
 
     Returns:
         Series aligned to returns.index.
     """
-    ratio = straightness_ratio(returns, window)
+    if windows is not None:
+        ratio = multi_scale_ratio(returns, windows)
+    else:
+        ratio = straightness_ratio(returns, window)
+
     if mom_thresh is None:
         mom_thresh = ratio.quantile(momentum_pct / 100)
     if rev_thresh is None:
