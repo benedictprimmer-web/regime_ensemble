@@ -39,6 +39,7 @@ def expanding_backtest(
     min_train_days: int = 504,    # 2 years minimum before first live period
     refit_freq: int     = 252,    # refit annually (1 trading year)
     multi_scale: bool   = False,  # use multi-scale geometric if True
+    geo_directional: bool = False,
     verbose: bool       = True,
 ) -> pd.DataFrame:
     """
@@ -87,13 +88,14 @@ def expanding_backtest(
 
         # -- Geometric: thresholds from train only ---------------------------
         mom_thresh, rev_thresh = compute_thresholds(
-            train_ret, windows=geo_windows
+            train_ret, windows=geo_windows, directional=geo_directional
         )
         geo_test = geometric_signal(
             test_ret,
             mom_thresh=mom_thresh,
             rev_thresh=rev_thresh,
             windows=geo_windows,
+            directional=geo_directional,
         )
 
         # -- Markov: fit on train, forward-filter test -----------------------

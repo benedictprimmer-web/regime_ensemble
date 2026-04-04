@@ -386,9 +386,11 @@ def main() -> None:
     parser.add_argument("--skip-bic",    action="store_true", help="Skip BIC model selection step (~60s)")
     parser.add_argument("--walkforward", action="store_true", help="Run walk-forward OOS validation (~5 mins)")
     parser.add_argument("--multi-asset", action="store_true", help="Run on SPY, QQQ, IWM, TLT, GLD (~3 mins)")
-    parser.add_argument("--vol-signal",  action="store_true", help="Add vol ratio dampening to ensemble (5-day/63-day realised vol)")
-    parser.add_argument("--multi-scale", action="store_true", help="Use multi-scale geometric signal (average across 5, 15, 30-day windows)")
-    parser.add_argument("--expanding",   action="store_true", help="Run expanding-window honest backtest (~5-10 mins)")
+    parser.add_argument("--vol-signal",      action="store_true", help="Add vol ratio dampening to ensemble (5-day/63-day realised vol)")
+    parser.add_argument("--multi-scale",     action="store_true", help="Use multi-scale geometric signal (average across 5, 15, 30-day windows)")
+    parser.add_argument("--expanding",       action="store_true", help="Run expanding-window honest backtest (~5-10 mins)")
+    parser.add_argument("--geo-directional", action="store_true", help="Use signed straightness ratio: uptrends +1, downtrends -1 (fixes direction-blindness)")
+    parser.add_argument("--continuous",      action="store_true", help="Continuous position sizing: position = ensemble score [0,1] instead of discrete {0, 0.5, 1}")
     args = parser.parse_args()
 
     if args.multi_asset:
@@ -428,8 +430,13 @@ def main() -> None:
     # ── 3. Geometric Signal ────────────────────────────────────────────
     geo_windows = MULTI_WINDOWS if args.multi_scale else None
     geo_desc = ("multi-scale windows=%s" % MULTI_WINDOWS) if args.multi_scale else "window=15"
+    if args.geo_directional:
+        geo_desc += ", directional (signed ratio)"
     _section("3. GEOMETRIC SIGNAL  (straightness ratio, %s)" % geo_desc)
-    geo = geometric_signal(ret, window=15, windows=geo_windows)
+    geo = geometric_signal(ret, window=15, windows=geo_windows, directional=args.geo_directional)
+    if args.geo_directional:
+        print("  Directional mode: uptrend ratio > 0, downtrend ratio < 0."
+              " Straight crashes now score LOW (cash) rather than HIGH (buy).")
     counts = geo.value_counts()
     for val, name in [(1.0, "Momentum"), (0.5, "Mixed"), (0.0, "Reversion")]:
         n = counts.get(val, 0)
@@ -493,13 +500,18 @@ def main() -> None:
 
     # ── 7. Backtest + Cost Sensitivity ────────────────────────────────
     _section("7. BACKTEST RESULTS")
-    mode = "Long / Short" if args.short else "Long on momentum (+1), half-long on mixed (+0.5), cash on reversion"
-    print(f"  Mode: {mode}")
-    if args.min_hold > 1:
-        print(f"  Persistence filter: {args.min_hold} consecutive days required before regime switch")
+    if args.continuous:
+        print("  Mode: Continuous sizing  (position = ensemble score, clipped [0, 1])")
+        print("  Note: --short and --min-hold are ignored in continuous mode")
+    else:
+        mode = "Long / Short" if args.short else "Long on momentum (+1), half-long on mixed (+0.5), cash on reversion"
+        print(f"  Mode: {mode}")
+        if args.min_hold > 1:
+            print(f"  Persistence filter: {args.min_hold} consecutive days required before regime switch")
     print("  Signal execution: 1-day lag (signal at close T → trade at open T+1)\n")
 
-    bt   = run_backtest(ret, labels, allow_short=args.short, cost_bps=0, min_hold_days=args.min_hold)
+    bt   = run_backtest(ret, labels, allow_short=args.short, cost_bps=0, min_hold_days=args.min_hold,
+                        score=score if args.continuous else None)
     perf = compute_stats(bt)
     for strategy_name, metrics in perf.items():
         print(f"  {strategy_name}:")
@@ -511,7 +523,8 @@ def main() -> None:
     print("  Transaction cost sensitivity (long-only strategy):")
     print(f"  {'Cost':>8s}  {'CAGR':>8s}  {'Sharpe':>8s}  {'Max DD':>8s}")
     for bps in [0, 5, 10, 20]:
-        bt_c   = run_backtest(ret, labels, allow_short=False, cost_bps=bps, min_hold_days=args.min_hold)
+        bt_c   = run_backtest(ret, labels, allow_short=False, cost_bps=bps, min_hold_days=args.min_hold,
+                              score=score if args.continuous else None)
         perf_c = compute_stats(bt_c)["Strategy (Long Only)"]
         print(f"  {bps:>6d}bps  {perf_c['CAGR']:>8s}  {perf_c['Sharpe']:>8s}  {perf_c['Max DD']:>8s}")
 
@@ -543,7 +556,8 @@ def main() -> None:
         _section("8. WALK-FORWARD OOS VALIDATION  (10 folds x 63 days, fully OOS)")
         print("  Geometric: thresholds from train slice only.")
         print("  Markov: fitted on train, forward-filtered on test (no EM on test data).\n")
-        wf_df, oos_returns = walk_forward(ret, n_folds=10, test_size=63)
+        wf_df, oos_returns = walk_forward(ret, n_folds=10, test_size=63,
+                                          geo_directional=args.geo_directional)
         print(wf_df.to_string())
         pos_folds = (wf_df.loc[(slice(None), "momentum"), "Dir"] == "✓").sum()
         total     = len(wf_df.loc[(slice(None), "momentum")])
@@ -560,7 +574,8 @@ def main() -> None:
         multi_scale_flag = args.multi_scale
         print(f"  Geometric: {'multi-scale ' + str(MULTI_WINDOWS) if multi_scale_flag else 'window=15'}")
         print("  Markov: em_iter=200 per refit. First live period after 2 years of data.\n")
-        exp_bt = expanding_backtest(ret, multi_scale=multi_scale_flag, verbose=True)
+        exp_bt = expanding_backtest(ret, multi_scale=multi_scale_flag,
+                                    geo_directional=args.geo_directional, verbose=True)
 
         from src.backtest import compute_stats as _cs
         exp_perf = _cs(exp_bt)

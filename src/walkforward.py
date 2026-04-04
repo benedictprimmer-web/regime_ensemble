@@ -35,6 +35,7 @@ def walk_forward(
     returns: pd.Series,
     n_folds: int  = 10,
     test_size: int = 63,   # ~1 quarter of trading days
+    geo_directional: bool = False,
 ) -> tuple:
     """
     Walk-forward OOS validation of the ensemble signal.
@@ -75,8 +76,9 @@ def walk_forward(
               f"({len(test_ret)} days)")
 
         # ── Geometric: OOS thresholds from train ──────────────────────
-        mom_thresh, rev_thresh = compute_thresholds(train_ret)
-        geo_test = geometric_signal(test_ret, mom_thresh=mom_thresh, rev_thresh=rev_thresh)
+        mom_thresh, rev_thresh = compute_thresholds(train_ret, directional=geo_directional)
+        geo_test = geometric_signal(test_ret, mom_thresh=mom_thresh, rev_thresh=rev_thresh,
+                                    directional=geo_directional)
 
         # ── Markov: train-only fit, forward-filter on test ─────────────
         try:

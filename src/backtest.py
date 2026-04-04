@@ -7,6 +7,12 @@ Signal execution rules (daily, no leverage):
     regime = "reversion" →  cash        ( 0.0)  [long-only variant]
                          →  short       (-1.0)  [long/short, --short flag]
 
+Continuous sizing mode (score parameter):
+    When a `score` Series is passed to run_backtest(), discrete regime labels
+    are ignored and position = score (clipped to [0, 1]). This eliminates
+    hard threshold transitions and reduces the ~61 label switches/year.
+    Transaction costs are lower because position changes are gradual.
+
 "Mixed" gets a half-position because it has the strongest forward-return
 signal (T=3.21, p=0.001 on 2000-2025 data). The original cash position
 was leaving statistically significant return on the table.
@@ -58,6 +64,7 @@ def run_backtest(
     allow_short: bool = False,
     cost_bps: float = 0,
     min_hold_days: int = 1,
+    score: pd.Series = None,
 ) -> pd.DataFrame:
     """
     Run regime-following backtest.
@@ -70,24 +77,34 @@ def run_backtest(
         min_hold_days : persistence filter -- regime must hold this many
                         consecutive days before position changes (default=1,
                         i.e. no filtering). Use 3-5 to reduce turnover.
+        score         : optional continuous ensemble score [0, 1]. When
+                        provided, position = score directly (clipped to [0,1]),
+                        bypassing discrete regime labels. Reduces label
+                        switches and transaction costs at any cost level.
 
     Returns:
         DataFrame with columns:
             log_return, signal, strategy_return, bnh_return,
             equity_strategy, equity_bnh
     """
-    aligned = pd.concat([returns, regime], axis=1).dropna()
-    ret = aligned["log_return"]
-    reg = aligned["regime"]
+    if score is not None:
+        # Continuous sizing: position = ensemble score, no discrete labels
+        aligned = pd.concat([returns.rename("log_return"), score], axis=1).dropna()
+        ret    = aligned["log_return"]
+        signal = aligned[score.name].clip(0, 1).rename("signal")
+    else:
+        aligned = pd.concat([returns, regime], axis=1).dropna()
+        ret = aligned["log_return"]
+        reg = aligned["regime"]
 
-    if min_hold_days > 1:
-        reg = _apply_persistence_filter(reg, min_hold_days)
+        if min_hold_days > 1:
+            reg = _apply_persistence_filter(reg, min_hold_days)
 
-    signal = pd.Series(0.0, index=reg.index, name="signal")
-    signal[reg == "momentum"] = 1.0
-    signal[reg == "mixed"]    = 0.5
-    if allow_short:
-        signal[reg == "reversion"] = -1.0
+        signal = pd.Series(0.0, index=reg.index, name="signal")
+        signal[reg == "momentum"] = 1.0
+        signal[reg == "mixed"]    = 0.5
+        if allow_short:
+            signal[reg == "reversion"] = -1.0
 
     # 1-day execution lag: signal at T → position at T+1
     gross_ret = (signal.shift(1) * ret)
