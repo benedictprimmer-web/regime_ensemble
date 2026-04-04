@@ -223,7 +223,7 @@ def make_page1():
     # Two rows: top = full-width vol ratio; bottom = 2 panels
     gs = gridspec.GridSpec(2, 2, figure=fig,
                            left=0.09, right=0.95,
-                           top=0.880, bottom=0.07,
+                           top=0.880, bottom=0.13,
                            height_ratios=[1.1, 1.0],
                            hspace=0.72, wspace=0.38)
 
@@ -326,7 +326,7 @@ def make_page2():
                            left=0.10, right=0.95,
                            top=0.880, bottom=0.06,
                            height_ratios=[1.4, 1.1, 0.9],
-                           hspace=0.82, wspace=0.40)
+                           hspace=1.05, wspace=0.40)
 
     # -- Panel 1: Equity curves (full width) ---------------------------------
     ax1 = fig.add_subplot(gs[0, :])
@@ -381,6 +381,7 @@ def make_page2():
                      fontsize=6.5, color=C["text"])
         ax2.text(i, -0.050, "n=%d" % n,
                  ha="center", fontsize=6.5, color=C["sub"])
+    ax2.set_ylim(-0.09, max(max(means) + max(cis) + 0.06, 0.20))
     ax2.set_ylabel("Mean next-day return (%)", fontsize=8)
     _style(ax2)
     _tc(ax2, "Next-Day Returns by Regime (v6 Full)",
@@ -408,9 +409,11 @@ def make_page2():
     ax3.set_ylabel("Strategy Sharpe Ratio", fontsize=8)
     ax3.legend(fontsize=6.8, loc="upper right", framealpha=0.88)
     _style(ax3)
-    _tc(ax3, "Sharpe vs Transaction Cost (0-30 bps)",
-        "v5: ~%.0f switches/yr.  v6: ~%.0f switches/yr.  "
-        "Fewer switches extend the profitable cost range." % (sw_v5, sw_v6))
+    _tc(ax3, "Sharpe vs Transaction Cost (0-30 bps)")
+    ax3.text(0.5, -0.25, "v5: ~%.0f switches/yr.  v6: ~%.0f switches/yr.  "
+             "Fewer switches extend the profitable cost range." % (sw_v5, sw_v6),
+             transform=ax3.transAxes, ha="center", fontsize=6.8,
+             color=C["sub"], va="top", style="italic")
 
     # -- Panel 4: Performance attribution table (full width) -----------------
     ax4 = fig.add_subplot(gs[2, :])
@@ -475,7 +478,7 @@ def make_page3():
                            left=0.10, right=0.95,
                            top=0.880, bottom=0.06,
                            height_ratios=[1.4, 1.1, 0.9],
-                           hspace=0.82, wspace=0.40)
+                           hspace=1.05, wspace=0.40)
 
     # -- Panel 1: Expanding-window equity curve (full width) ------------------
     ax1 = fig.add_subplot(gs[0, :])

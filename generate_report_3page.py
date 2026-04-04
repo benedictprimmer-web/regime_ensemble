@@ -120,12 +120,10 @@ def make_page1():
                         hspace=0.7, wspace=0.4)
 
     # ── Title block ────────────────────────────────────────────────────────
-    fig.text(0.5, 0.95, "Regime Ensemble", ha="center", fontsize=20,
+    fig.text(0.5, 0.95, "Regime Structure — How It Detects", ha="center", fontsize=14,
              fontweight="bold", color=C["text"])
-    fig.text(0.5, 0.925, "Detecting market conditions to reduce risk — not just maximise returns",
-             ha="center", fontsize=10, color=C["subtext"])
-    fig.text(0.5, 0.906,
-             f"SPY  ·  {FROM_DATE[:4]}--{TO_DATE[:4]}  ·  v5.0",
+    fig.text(0.5, 0.933,
+             "Geometric straightness ratio + Markov k=3 hidden states  ·  SPY 2000-2025  ·  v5.0",
              ha="center", fontsize=8.5, color=C["subtext"])
 
     # ── Divider ───────────────────────────────────────────────────────────
@@ -262,7 +260,7 @@ def make_page1():
              "Strategy breaks even around %dbps. Transaction costs are material -- see page 3." % breakeven_bps,
              transform=ax5.transAxes, fontsize=7.5, color=C["gold"], va="top")
 
-    fig.text(0.5, 0.02, "Page 1 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
+    fig.text(0.5, 0.02, "Page 2 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
              ha="center", fontsize=6.5, color=C["subtext"])
     return fig
 
@@ -350,7 +348,7 @@ def make_page2():
              "Filtered probabilities only — no look-ahead bias.")
 
     fig.autofmt_xdate(rotation=25, ha="right")
-    fig.text(0.5, 0.02, "Page 2 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
+    fig.text(0.5, 0.02, "Page 3 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
              ha="center", fontsize=6.5, color=C["subtext"])
     return fig
 
@@ -364,12 +362,11 @@ def make_page3():
     fig.subplots_adjust(left=0.09, right=0.95, top=0.87, bottom=0.07,
                         hspace=0.90, wspace=0.38)
 
-    fig.text(0.5, 0.96, "Results & Limitations",
-             ha="center", fontsize=14, fontweight="bold", color=C["text"])
-    fig.text(0.5, 0.945,
-             "Equity curves, drawdowns, transaction cost sensitivity, and what to watch out for",
+    fig.text(0.5, 0.96, "Regime Ensemble",
+             ha="center", fontsize=18, fontweight="bold", color=C["text"])
+    fig.text(0.5, 0.942, "Overview — Performance vs Buy & Hold  ·  SPY 2000-2025  ·  v5.0",
              ha="center", fontsize=9, color=C["subtext"])
-    fig.add_artist(plt.Line2D([0.09, 0.95], [0.935, 0.935],
+    fig.add_artist(plt.Line2D([0.09, 0.95], [0.932, 0.932],
                                transform=fig.transFigure, color="#dde", lw=1))
 
     gs = gridspec.GridSpec(3, 2, figure=fig, left=0.09, right=0.95,
@@ -461,7 +458,7 @@ def make_page3():
         ax4.text(0.01, y - 0.07, f"    {body}", transform=ax4.transAxes,
                  fontsize=7.8, color=C["subtext"], va="top")
 
-    fig.text(0.5, 0.02, "Page 3 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
+    fig.text(0.5, 0.02, "Page 1 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
              ha="center", fontsize=6.5, color=C["subtext"])
     return fig
 
@@ -472,7 +469,7 @@ def make_page3():
 
 out_path = OUTPUT_DIR / "SPY_3page_report.pdf"
 with PdfPages(out_path) as pdf:
-    for page_fn in [make_page1, make_page2, make_page3]:
+    for page_fn in [make_page3, make_page1, make_page2]:
         fig = page_fn()
         pdf.savefig(fig, bbox_inches="tight", facecolor="white")
         plt.close(fig)

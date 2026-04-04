@@ -45,12 +45,12 @@ C = {
 # ── Figure layout ──────────────────────────────────────────────────────────
 
 fig = plt.figure(figsize=(13, 9.5), facecolor="white")
-fig.subplots_adjust(left=0.04, right=0.96, top=0.93, bottom=0.03, hspace=0.55, wspace=0.38)
+fig.subplots_adjust(left=0.04, right=0.96, top=0.88, bottom=0.08, hspace=0.55, wspace=0.38)
 
 gs_top = gridspec.GridSpec(1, 3, figure=fig, left=0.04, right=0.96,
-                           top=0.93, bottom=0.57, wspace=0.35)
+                           top=0.88, bottom=0.57, wspace=0.35)
 gs_bot = gridspec.GridSpec(1, 3, figure=fig, left=0.04, right=0.96,
-                           top=0.50, bottom=0.03, wspace=0.35)
+                           top=0.50, bottom=0.08, wspace=0.35)
 
 # ── Title ──────────────────────────────────────────────────────────────────
 

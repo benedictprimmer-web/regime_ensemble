@@ -217,7 +217,7 @@ def make_page1():
                               transform=fig.transFigure, color=C["gridline"], lw=1))
 
     gs = gridspec.GridSpec(3, 2, figure=fig, left=0.09, right=0.95,
-                           top=0.880, bottom=0.07, hspace=1.10, wspace=0.42)
+                           top=0.880, bottom=0.10, hspace=1.10, wspace=0.42)
 
     # Panel 1: Return distributions by regime (KDE)
     ax1 = fig.add_subplot(gs[0, :])
@@ -252,7 +252,7 @@ def make_page1():
     ks_txt = "  |  ".join(
         "K-S %s: D=%.3f, p=%.4f" % (k, v[0], v[1]) for k, v in ks_results.items()
     )
-    ax1.text(0.01, -0.22, ks_txt, transform=ax1.transAxes,
+    ax1.text(0.01, -0.30, ks_txt, transform=ax1.transAxes,
              fontsize=6.8, color=C["subtext"], style="italic")
 
     # Panel 2: Transition matrix heatmap
