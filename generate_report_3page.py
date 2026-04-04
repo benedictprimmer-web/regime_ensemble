@@ -359,7 +359,7 @@ def make_page2():
 
 def make_page3():
     fig = plt.figure(figsize=(8.27, 11.69), facecolor="white")
-    fig.subplots_adjust(left=0.09, right=0.95, top=0.87, bottom=0.07,
+    fig.subplots_adjust(left=0.09, right=0.95, top=0.87, bottom=0.12,
                         hspace=0.90, wspace=0.38)
 
     fig.text(0.5, 0.96, "Regime Ensemble",
@@ -370,7 +370,7 @@ def make_page3():
                                transform=fig.transFigure, color="#dde", lw=1))
 
     gs = gridspec.GridSpec(3, 2, figure=fig, left=0.09, right=0.95,
-                           top=0.87, bottom=0.06, hspace=0.90, wspace=0.55)
+                           top=0.87, bottom=0.12, hspace=0.90, wspace=0.55)
 
     # ── Panel 1: Equity curves ─────────────────────────────────────────────
     ax1 = fig.add_subplot(gs[0, :])
@@ -402,7 +402,7 @@ def make_page3():
     ax2.spines[["top", "right"]].set_visible(False)
     ax2.tick_params(axis="x", labelsize=7)
     _section_title(ax2, "Drawdown Comparison")
-    ax2.text(0.0, -0.17, "Strategy reduces drawdowns across all major crashes\n(dot-com, GFC, COVID, 2022).",
+    ax2.text(0.0, -0.28, "Strategy reduces drawdowns across all major crashes\n(dot-com, GFC, COVID, 2022).",
              transform=ax2.transAxes, fontsize=7.5, color=C["subtext"], ha="left", style="italic")
 
     # ── Panel 3: Transaction cost sensitivity ─────────────────────────────
@@ -428,7 +428,7 @@ def make_page3():
     ax3.spines[["top", "right"]].set_visible(False)
     ax3.tick_params(labelsize=8)
     _section_title(ax3, "Transaction Cost Sensitivity")
-    ax3.text(0.0, -0.17, "~%.0f switches/yr; Sharpe > B&H to ~%dbps; breaks even at ~%dbps.\nUse --min-hold 3 to cut switches and extend the profitable range." % (ensemble_switches_pa, beats_bnh_bps, breakeven_bps),
+    ax3.text(0.0, -0.28, "~%.0f switches/yr; Sharpe > B&H to ~%dbps; breaks even at ~%dbps.\nUse --min-hold 3 to cut switches and extend the profitable range." % (ensemble_switches_pa, beats_bnh_bps, breakeven_bps),
              transform=ax3.transAxes, fontsize=7.5, color=C["subtext"], ha="left", style="italic")
 
     # ── Panel 4: Limitations ──────────────────────────────────────────────
