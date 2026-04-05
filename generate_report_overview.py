@@ -201,7 +201,7 @@ def make_page1():
     ax3.set_xticks([]); ax3.set_yticks([])
     ax3.spines[["top", "right"]].set_visible(False)
     ax3.legend(fontsize=7, loc="upper left", framealpha=0.6)
-    _section_title(ax3, "Detector 1 — Geometric (path shape, 15-day window)")
+    _section_title(ax3, "Detector 1 — Geometric")
     _caption(ax3,
              "ratio = |cumulative return| / Σ|daily returns|  over 15 days.\n"
              "Near 1.0 = straight-line move (momentum). Near 0.0 = oscillation (reversion).\n"
@@ -221,7 +221,7 @@ def make_page1():
     ax4.set_xlabel("Mean daily return (%)", fontsize=8)
     ax4.spines[["top", "right"]].set_visible(False)
     ax4.tick_params(labelsize=8)
-    _section_title(ax4, "Detector 2 — Markov AR(1), k=3 hidden states")
+    _section_title(ax4, "Detector 2 — Markov AR(1), k=3")
     _caption(ax4,
              "k=3 selected by BIC (ΔBIC=82 vs k=2). Fitted on training data only;\n"
              "Hamilton filter on test data — no look-ahead. Crisis (P>0.50) overrides\n"
@@ -270,8 +270,8 @@ def make_page1():
                  fontsize=8, color=C["subtext"], ha="center", va="top")
         ax5.text(x + 0.145, 0.30, desc, transform=ax5.transAxes,
                  fontsize=7.8, color=C["subtext"], ha="center", va="top", style="italic")
-        ax5.text(x + 0.145, 0.15,
-                 f"{pct:.0f}% of trading days  ({n:,} days  ·  SPY 2000-2025)",
+        ax5.text(x + 0.145, 0.17,
+                 f"{pct:.0f}% of days  ·  {n:,} trading days",
                  transform=ax5.transAxes, fontsize=7.5, color=col, ha="center", va="top")
 
     _footer(fig, "Page 1 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble")
@@ -476,7 +476,7 @@ def make_page3():
     ax3.spines[["top", "right"]].set_visible(False)
     ax3.tick_params(labelsize=8)
     _section_title(ax3, "Transaction Cost Sensitivity")
-    ax3.text(0.0, -0.20,
+    ax3.text(0.0, -0.38,
              "~%.0f switches/yr · beats B&H Sharpe to ~%d bps · breaks even at ~%d bps.\n"
              "--min-hold 3 reduces switches and extends the profitable range." %
              (ensemble_switches_pa, beats_bnh_bps, breakeven_bps),
