@@ -23,6 +23,8 @@ SPY · 2000–2025 · zero transaction costs · 1-day execution lag · **v5 core
 
 v6.0 adds vol-ratio dampening, multi-scale geometric, and expanding-window OOS validation — see the [v6 technical report](docs/SPY_v6_report.pdf) for those results.
 
+v7.0 and v8.0 are research iterations documented in the reports below — both underperform the v5 baseline, with honest analysis of why.
+
 ---
 
 ## Reports & Documents
@@ -33,6 +35,7 @@ v6.0 adds vol-ratio dampening, multi-scale geometric, and expanding-window OOS v
 | [Technical Quant Report (PDF)](docs/SPY_quant_report.pdf) | v5 | Quantitative | KDE distributions, K-S tests, transition matrix, rolling IC, full attribution |
 | [v6 Technical Report (PDF)](docs/SPY_v6_report.pdf) | **v6** | Quantitative | Vol ratio dampening, multi-scale geometric, expanding-window OOS validation |
 | [v7 Research Report (PDF)](docs/SPY_v7_research_report.pdf) | **v7** | Research | Directional geometric and continuous sizing: results, analysis, and why they underperform |
+| [v8 Research Report (PDF)](docs/SPY_v8_report.pdf) | **v8** | Research | Kalman drift filter: Q≈0 finding, parameter stability, and why daily Kalman underperforms |
 | [v4/v5 Changes (PDF)](docs/v4v5_changes_report.pdf) | v4/v5 | Developer | What changed: half-position mixed regime, persistence filter, walk-forward OOS |
 
 ---
@@ -125,6 +128,9 @@ python3 run.py --fetch-vix --vix-signal --skip-bic          # VIX dampening (pai
 python3 run.py --short --skip-bic                           # allow short on reversion (signal weak)
 python3 run.py --min-hold 3 --skip-bic                      # persistence filter: 3-day minimum hold
 python3 run.py --vol-signal --multi-scale --min-hold 3 --skip-bic  # combined v6 + persistence
+python3 run.py --kalman --skip-bic                          # Kalman drift filter (v8, underperforms — Q≈0)
+python3 run.py --geo-directional --skip-bic                 # signed straightness ratio (v7, underperforms)
+python3 run.py --continuous --skip-bic                      # continuous position sizing (v7, underperforms)
 ```
 
 Outputs are saved to `outputs/` and prefixed with `{ticker}_{from}_{to}_`.
@@ -177,7 +183,13 @@ regime_ensemble/
 
 ## Changelog
 
-### v7.0 (latest)
+### v8.0 (latest)
+- **Kalman drift filter** (`--kalman`) — local-level Kalman model: r_t = μ_t + ε_t (R), μ_t = μ_{t-1} + η_t (Q). Only 2 parameters (Q, R) estimated by MLE on innovation likelihood — zero return-target leakage. Signal = norm.cdf(μ_t / √(P_t + R)) ∈ [0, 1], added as a 3rd equal-weight component alongside geometric and Markov. Crisis override also applied to the Kalman signal.
+- **Result: Sharpe 0.60 vs 0.68 baseline** — the MLE correctly estimates Q ≈ 0 (daily drift changes are undetectable relative to return noise). The signal stays near 0.5 and dilutes the existing ensemble rather than adding information.
+- **Key finding**: at daily frequency on SPY, drift changes are not distinguishable from noise. A local-level Kalman filter needs either intraday data or a regime-switching formulation (Kim filter) to be effective. The underperformance is itself evidence against overfitting: an overfit model would have tuned Q to match historical return patterns.
+- See the [v8 Research Report (PDF)](docs/SPY_v8_report.pdf) for Q/R parameter stability analysis, signal distributions, and full results.
+
+### v7.0
 - **Directional geometric** (`--geo-directional`) — signed straightness ratio in [−1, +1]: straight-up scores +1, straight-down scores −1. Fixes the direction-blindness where crashes were labelled momentum. Result: Sharpe 0.32 vs 0.68 baseline — the Markov crisis override already handles downtrends; directional geometry creates a correlated second crash detector that reduces ensemble diversity without adding new information. Available as a research flag.
 - **Continuous position sizing** (`--continuous`) — position = ensemble score [0, 1] directly, bypassing discrete {0, 0.5, 1} labels. Intended to reduce label switches and transaction costs. Result: Sharpe 0.56 vs 0.68 — the empirically calibrated discrete half-position on mixed days (T=3.21, p=0.001) outperforms the raw score; high-conviction days are underweighted at score 0.7 vs full position 1.0. Available as a research flag.
 - See the [v7 Research Report (PDF)](docs/SPY_v7_research_report.pdf) for charts and full analysis.

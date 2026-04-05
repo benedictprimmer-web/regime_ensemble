@@ -391,6 +391,7 @@ def main() -> None:
     parser.add_argument("--expanding",       action="store_true", help="Run expanding-window honest backtest (~5-10 mins)")
     parser.add_argument("--geo-directional", action="store_true", help="Use signed straightness ratio: uptrends +1, downtrends -1 (fixes direction-blindness)")
     parser.add_argument("--continuous",      action="store_true", help="Continuous position sizing: position = ensemble score [0,1] instead of discrete {0, 0.5, 1}")
+    parser.add_argument("--kalman",          action="store_true", help="Add Kalman drift filter as 3rd ensemble signal (local level model, MLE-estimated Q and R)")
     args = parser.parse_args()
 
     if args.multi_asset:
@@ -456,6 +457,8 @@ def main() -> None:
         ensemble_parts.append("VIX dampening")
     if vol_ratio_signal is not None:
         ensemble_parts.append("vol ratio dampening (5d/63d)")
+    if args.kalman:
+        ensemble_parts.append("Kalman drift (3-way ensemble)")
     _section("5. ENSEMBLE  (%s)" % ", ".join(ensemble_parts))
 
     if vol_ratio_signal is not None:
@@ -464,9 +467,24 @@ def main() -> None:
         print(f"  Vol ratio (5d/63d):  mean={vr_mean:.2f}  "
               f"days with ratio>1.5 (dampening active): {vr_pct_high:.1f}%")
 
+    kalman_signal_series = None
+    if args.kalman:
+        from src.kalman import fit_kalman, kalman_signal as _kal_signal
+        print("  Fitting Kalman filter (MLE for Q, R)...")
+        Q_kal, R_kal = fit_kalman(ret)
+        kalman_signal_series = _kal_signal(ret, Q=Q_kal, R=R_kal)
+        q_ratio = Q_kal / R_kal
+        print(f"  Kalman MLE:  Q={Q_kal:.2e}  R={R_kal:.2e}  Q/R ratio={q_ratio:.4f}")
+        print(f"  (Q/R < 0.01 = slow drift; Q/R > 0.1 = fast-adapting filter)")
+        kal_pct_high = (kalman_signal_series > 0.65).mean() * 100
+        kal_pct_low  = (kalman_signal_series < 0.35).mean() * 100
+        print(f"  Kalman signal:  >0.65 (momentum-leaning): {kal_pct_high:.1f}%  "
+              f"<0.35 (reversion-leaning): {kal_pct_low:.1f}%")
+
     score  = ensemble_score(geo, mom_prob, crisis_prob,
                             vix=vix_signal,
-                            vol_ratio_series=vol_ratio_signal)
+                            vol_ratio_series=vol_ratio_signal,
+                            kalman=kalman_signal_series)
     labels = regime_labels(score)
     dist   = labels.value_counts()
     print("  Ensemble regime distribution:")
@@ -557,7 +575,8 @@ def main() -> None:
         print("  Geometric: thresholds from train slice only.")
         print("  Markov: fitted on train, forward-filtered on test (no EM on test data).\n")
         wf_df, oos_returns = walk_forward(ret, n_folds=10, test_size=63,
-                                          geo_directional=args.geo_directional)
+                                          geo_directional=args.geo_directional,
+                                          use_kalman=args.kalman)
         print(wf_df.to_string())
         pos_folds = (wf_df.loc[(slice(None), "momentum"), "Dir"] == "✓").sum()
         total     = len(wf_df.loc[(slice(None), "momentum")])
@@ -575,7 +594,8 @@ def main() -> None:
         print(f"  Geometric: {'multi-scale ' + str(MULTI_WINDOWS) if multi_scale_flag else 'window=15'}")
         print("  Markov: em_iter=200 per refit. First live period after 2 years of data.\n")
         exp_bt = expanding_backtest(ret, multi_scale=multi_scale_flag,
-                                    geo_directional=args.geo_directional, verbose=True)
+                                    geo_directional=args.geo_directional,
+                                    use_kalman=args.kalman, verbose=True)
 
         from src.backtest import compute_stats as _cs
         exp_perf = _cs(exp_bt)

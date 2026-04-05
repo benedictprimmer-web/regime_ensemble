@@ -40,6 +40,7 @@ def expanding_backtest(
     refit_freq: int     = 252,    # refit annually (1 trading year)
     multi_scale: bool   = False,  # use multi-scale geometric if True
     geo_directional: bool = False,
+    use_kalman: bool    = False,  # include Kalman drift signal as 3rd component
     verbose: bool       = True,
 ) -> pd.DataFrame:
     """
@@ -107,8 +108,19 @@ def expanding_backtest(
             mom_prob_test    = pd.Series(geo_test.values * 0.5, index=test_ret.index)
             crisis_prob_test = pd.Series(0.0, index=test_ret.index)
 
+        # -- Kalman: fit on train, apply to test ----------------------------
+        kal_test = None
+        if use_kalman:
+            from src.kalman import fit_kalman, kalman_signal
+            try:
+                Q, R = fit_kalman(train_ret)
+                kal_test = kalman_signal(test_ret, Q=Q, R=R)
+            except Exception as e:
+                if verbose:
+                    print("    Kalman fit failed: %s -- skipping Kalman component" % e)
+
         # -- Ensemble + backtest ---------------------------------------------
-        score  = ensemble_score(geo_test, mom_prob_test, crisis_prob_test)
+        score  = ensemble_score(geo_test, mom_prob_test, crisis_prob_test, kalman=kal_test)
         labels = regime_labels(score)
         bt     = run_backtest(test_ret, labels, allow_short=False, cost_bps=0)
         pieces.append(bt[["strategy_return", "bnh_return"]])

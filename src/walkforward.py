@@ -36,14 +36,17 @@ def walk_forward(
     n_folds: int  = 10,
     test_size: int = 63,   # ~1 quarter of trading days
     geo_directional: bool = False,
+    use_kalman: bool = False,
 ) -> tuple:
     """
     Walk-forward OOS validation of the ensemble signal.
 
     Args:
-        returns   : full daily log return series
-        n_folds   : number of test folds
-        test_size : trading days per test fold
+        returns        : full daily log return series
+        n_folds        : number of test folds
+        test_size      : trading days per test fold
+        geo_directional: if True, use signed straightness ratio
+        use_kalman     : if True, include Kalman drift signal as 3rd ensemble component
 
     Returns:
         (stats_df, oos_returns) where:
@@ -88,8 +91,18 @@ def walk_forward(
             mom_prob_test    = pd.Series(geo_test.values * 0.5, index=test_ret.index)
             crisis_prob_test = pd.Series(0.0, index=test_ret.index)
 
+        # ── Kalman: fit on train, apply to test ───────────────────────
+        kal_test = None
+        if use_kalman:
+            from src.kalman import fit_kalman, kalman_signal
+            try:
+                Q, R = fit_kalman(train_ret)
+                kal_test = kalman_signal(test_ret, Q=Q, R=R)
+            except Exception as e:
+                print(f"    Kalman fit failed: {e} — skipping Kalman component")
+
         # ── Ensemble + forward return stats ───────────────────────────
-        score  = ensemble_score(geo_test, mom_prob_test, crisis_prob_test)
+        score  = ensemble_score(geo_test, mom_prob_test, crisis_prob_test, kalman=kal_test)
         labels = regime_labels(score)
 
         bt_fold = run_backtest(test_ret, labels, allow_short=False, cost_bps=0)
