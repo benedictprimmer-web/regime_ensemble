@@ -41,6 +41,8 @@ SPY · 2000–2025 · zero transaction costs · 1-day execution lag · **v5 core
 
 The edge is **risk-adjusted return**, not raw return. The strategy sacrifices CAGR to stay flat during reversion and crisis regimes — the result is a Sharpe 55% higher than buy-and-hold and drawdowns that are 3.4× smaller.
 
+> **These numbers are in-sample** — the Markov model and geometric thresholds are fitted on the full 2000–2025 dataset. For a honest estimate of live performance, run `python3 run.py --expanding --skip-bic` (annual refit, fully out-of-sample). The observed optimism bias is small (~0.03 Sharpe points, per v6 analysis), but the expanding-window number is the one to quote.
+
 **Transaction costs matter.** ~61 position switches/year means costs compound quickly. Sharpe beats B&H to ~12 bps round-trip; strategy breaks even at ~17 bps. Use `--min-hold 3` to cut switches and extend the profitable range.
 
 ---
@@ -60,17 +62,19 @@ ratio(t) = |cumulative return over window| / Σ|daily returns|
 
 Thresholds are adaptive percentiles (top/bottom 30% of the ratio distribution), not fixed values. Zero parameters to estimate — no fitting cost, no look-ahead.
 
-### Signal 2 — Markov Switching AR(1) (hidden state)
+### Signal 2 — Gaussian HMM k=3 (hidden market state)
 
-A statistical model that learns three hidden market states from daily return patterns. k=3 is selected by BIC (ΔBIC = 82 over k=2):
+A 3-state hidden Markov model fit on a 5-feature observation vector that directly measures market structure rather than inferring it from daily return autocorrelation:
 
-| Regime | Mean return | Vol (ann.) |
-|---|---|---|
-| Momentum | +0.142%/day | 10% |
-| Choppy | -0.029%/day | 23% |
-| Crisis | -0.199%/day | 16% |
+| Feature | What it measures |
+|---|---|
+| `ret_20d` | 20-day cumulative return — medium-term direction |
+| `ret_5d` | 5-day cumulative return — short-term momentum |
+| `rvol_20d` | 20-day realised vol (annualised) — stress level |
+| `drawdown` | Distance from 252-day high — peak-to-trough loss |
+| `dist_200d` | Price / 200-day MA − 1 — structural trend position |
 
-Uses **filtered probabilities only** — no look-ahead bias. When P(crisis) > 0.50, the buy signal is suppressed regardless of all other indicators.
+State labels are assigned mechanically at every refit: highest mean `ret_20d` = Momentum, lowest = Crisis, middle = Choppy. Uses **filtered (causal) probabilities only** — no look-ahead bias. When P(crisis) > 0.50, the buy signal is suppressed regardless of all other indicators.
 
 ### The Key Statistical Finding
 

@@ -4,7 +4,7 @@ Regime Ensemble Backtest
 ========================
 Daily regime detection using a two-model ensemble:
     1. Geometric (straightness ratio, adaptive percentile thresholds)
-    2. Markov Switching AR(1), k=3 selected by BIC (ΔBIC=82 over k=2)
+    2. Gaussian HMM k=3 on 5-feature market-state vector (ret_20d, ret_5d, rvol_20d, drawdown, dist_200d)
 
 Usage:
     python run.py
@@ -345,6 +345,172 @@ def _plot_multi_asset_chart(results: list, from_date: str, to_date: str) -> None
     print(f"\n  Saved → {path}")
 
 
+def plot_ablation_curves(
+    scores: dict,
+    ret: pd.Series,
+    run_prefix: str,
+) -> None:
+    """
+    Two-panel chart for ablation analysis.
+
+    Top: equity curves for geo_only, crisis_filter, full_ensemble, and B&H.
+    Bottom: drawdowns for crisis_filter vs full_ensemble (the critical comparison).
+    """
+    bts = {}
+    for label, s in scores.items():
+        l  = regime_labels(s)
+        bt = run_backtest(ret.rename("log_return"), l, cost_bps=0)
+        bts[label] = bt
+
+    ablation_colors = {
+        "geo_only":      "#95a5a6",
+        "crisis_filter": "#e67e22",
+        "full_ensemble": COLORS["strategy"],
+    }
+    ablation_labels = {
+        "geo_only":      "Geo only  (no Markov)",
+        "crisis_filter": "Crisis filter  (1 - P(crisis))",
+        "full_ensemble": "Full ensemble  (P(momentum), current default)",
+    }
+
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(12, 8),
+        gridspec_kw={"height_ratios": [3, 1]},
+        sharex=True,
+    )
+
+    bnh_eq = np.exp(next(iter(bts.values()))["bnh_return"].cumsum())
+    ax1.plot(bnh_eq.index, bnh_eq, color=COLORS["bnh"], linewidth=1.3, label="Buy & Hold", alpha=0.7)
+    for label, bt in bts.items():
+        eq = np.exp(bt["strategy_return"].cumsum())
+        ax1.plot(eq.index, eq, color=ablation_colors[label], linewidth=1.5, label=ablation_labels[label])
+    ax1.axhline(1.0, color="#bdc3c7", linewidth=0.6, linestyle="--")
+    ax1.set_ylabel("Equity (base = 1.0)", fontsize=9)
+    ax1.legend(fontsize=8, loc="upper left")
+    ax1.set_title("Markov Ablation — Is P(momentum) adding directional value?", fontsize=11)
+    ax1.text(
+        0.01, 0.03,
+        "geo_only = geometric only  |  crisis_filter = mean(geo, 1-P(crisis))  |  "
+        "full_ensemble = current default: mean(geo, P(mom) zeroed on crisis)",
+        transform=ax1.transAxes, fontsize=7, color="#7f8c8d", style="italic",
+    )
+
+    for label in ["crisis_filter", "full_ensemble"]:
+        eq  = np.exp(bts[label]["strategy_return"].cumsum())
+        dd  = eq / eq.cummax() - 1
+        ax2.plot(dd.index, dd, color=ablation_colors[label], linewidth=1.2,
+                 label=ablation_labels[label], alpha=0.85)
+    ax2.axhline(0, color="#bdc3c7", linewidth=0.6)
+    ax2.set_ylabel("Drawdown", fontsize=9)
+    ax2.legend(fontsize=8, loc="lower left")
+    ax2.tick_params(axis="x", labelsize=8)
+
+    fig.autofmt_xdate(rotation=30, ha="right")
+    fig.tight_layout()
+    path = OUTPUT_DIR / f"{run_prefix}_ablation.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved → {path}")
+
+
+def run_ablation(
+    ret: pd.Series,
+    geo: pd.Series,
+    mom_prob: pd.Series,
+    crisis_prob: pd.Series,
+    run_prefix: str,
+    allow_short: bool = False,
+    min_hold_days: int = 1,
+) -> None:
+    """
+    Run the Markov ablation diagnostic.
+
+    Builds three ensemble variants that differ only in how the Markov component
+    is constructed, then compares Sharpe/CAGR/MaxDD side-by-side.
+
+    The result answers: "Is P(momentum) adding directional value, or is the
+    Markov edge entirely from identifying 'don't be aggressive here' periods?"
+
+    Variants:
+        geo_only       — geometric signal only (no Markov)
+        crisis_filter  — mean(geo, 1 - P(crisis))  — pure risk-state filter
+        full_ensemble  — mean(geo, P(momentum) zeroed on crisis)  — current default
+
+    If |full_ensemble Sharpe - crisis_filter Sharpe| < 0.05:
+        mom_prob adds minimal directional value. The edge is in the risk-state
+        filter. Consider switching default mode to 'crisis_filter'.
+    """
+    _section("ABLATION: Is Markov adding directional information?")
+    print("  Building 3 variants — signals identical, only Markov component changes.")
+    print("  VIX/vol dampening excluded so the Markov component is the only variable.")
+    print("  Discrete labels, 0 bps transaction costs, 1-day execution lag.\n")
+
+    variants = [
+        ("geo_only",      "geo_only"),
+        ("crisis_filter", "crisis_filter"),
+        ("full_ensemble", "full"),
+    ]
+    descriptions = {
+        "geo_only":      "(none — geometric only)      ",
+        "crisis_filter": "1 - P(crisis)                ",
+        "full_ensemble": "P(momentum), zeroed on crisis",
+    }
+
+    ret_named = ret.rename("log_return")  # run_backtest expects this column name
+    results = {}
+    scores  = {}
+    for label, mode in variants:
+        s = ensemble_score(geo, mom_prob, crisis_prob, mode=mode)
+        l = regime_labels(s)
+        bt = run_backtest(ret_named, l, allow_short=allow_short,
+                          cost_bps=0, min_hold_days=min_hold_days)
+        st  = compute_stats(bt, raw=True)["Strategy (Long Only)"]
+        pct_mom   = (l == "momentum").mean()
+        pct_mixed = (l == "mixed").mean()
+        results[label] = {**st, "pct_mom": pct_mom, "pct_mixed": pct_mixed}
+        scores[label]  = s
+
+    # ── Print comparison table ─────────────────────────────────────────
+    w = 90
+    print(f"  {'Variant':<16}  {'Markov component':<32}  {'CAGR':>6}  {'Sharpe':>7}  "
+          f"{'Max DD':>7}  {'%Mom':>5}  {'%Mix':>5}")
+    print("  " + "─" * w)
+    for label, _ in variants:
+        r = results[label]
+        print(
+            f"  {label:<16}  {descriptions[label]}  "
+            f"{r['CAGR']*100:>+5.1f}%  "
+            f"{r['Sharpe']:>7.2f}  "
+            f"{r['Max DD']*100:>6.1f}%  "
+            f"{r['pct_mom']*100:>4.0f}%  "
+            f"{r['pct_mixed']*100:>4.0f}%"
+        )
+
+    full_sh   = results["full_ensemble"]["Sharpe"]
+    cf_sh     = results["crisis_filter"]["Sharpe"]
+    geo_sh    = results["geo_only"]["Sharpe"]
+    delta_fc  = full_sh - cf_sh
+    delta_cg  = cf_sh - geo_sh
+
+    print(f"\n  Sharpe delta (full_ensemble vs crisis_filter): {delta_fc:+.3f}")
+    print(f"  Sharpe delta (crisis_filter  vs geo_only):    {delta_cg:+.3f}")
+
+    print("\n  Interpretation:")
+    if abs(delta_fc) < 0.05:
+        print("    |full - crisis_filter| < 0.05: P(momentum) adds minimal directional value.")
+        print("    The Markov edge is primarily identifying 'don't be aggressive here' periods.")
+        print("    Consider switching default to mode='crisis_filter' (simpler, more defensible).")
+    else:
+        print(f"    |full - crisis_filter| = {abs(delta_fc):.3f} >= 0.05:")
+        print("    P(momentum) IS contributing real directional value beyond the crisis filter.")
+        print("    Keeping mode='full' (current default) is justified.")
+
+    if delta_cg < 0.02:
+        print("    Note: crisis_filter barely beats geo_only — Markov adds little even as a risk filter.")
+
+    plot_ablation_curves(scores, ret, run_prefix)
+
+
 def run_multi_asset(args) -> None:
     _section("MULTI-ASSET VALIDATION  (SPY, QQQ, IWM, TLT, GLD)")
     print("  Fitting Markov k=3 for each asset (~30s each)...\n")
@@ -392,6 +558,7 @@ def main() -> None:
     parser.add_argument("--geo-directional", action="store_true", help="Use signed straightness ratio: uptrends +1, downtrends -1 (fixes direction-blindness)")
     parser.add_argument("--continuous",      action="store_true", help="Continuous position sizing: position = ensemble score [0,1] instead of discrete {0, 0.5, 1}")
     parser.add_argument("--kalman",          action="store_true", help="Add Kalman drift filter as 3rd ensemble signal (local level model, MLE-estimated Q and R)")
+    parser.add_argument("--ablation",        action="store_true", help="Compare geo_only / crisis_filter / full_ensemble — answers: is Markov adding directional value?")
     args = parser.parse_args()
 
     if args.multi_asset:
@@ -444,8 +611,8 @@ def main() -> None:
         print(f"  {name:<12s}  {n:4d} days  ({n / len(geo) * 100:.1f}%)")
 
     # ── 4. Markov k=3 Signal ───────────────────────────────────────────
-    _section("4. MARKOV k=3 SIGNAL  (filtered probabilities + transition analysis)")
-    print("  Fitting  (~30s)...")
+    _section("4. GAUSSIAN HMM k=3  (5-feature state vector, filtered probabilities)")
+    print("  Fitting  (5 random restarts × 200 EM iterations)...")
     mom_prob, crisis_prob, _, trans_info = fit_markov3(ret)
 
     # ── 5. Ensemble ────────────────────────────────────────────────────
@@ -567,6 +734,13 @@ def main() -> None:
         any_row = True
     if not any_row:
         print("  (insufficient data for sub-period breakdown — need >= 63 days per window)")
+
+    # ── Ablation diagnostic ────────────────────────────────────────────
+    if args.ablation:
+        run_ablation(ret, geo, mom_prob, crisis_prob,
+                     run_prefix=run_prefix,
+                     allow_short=args.short,
+                     min_hold_days=args.min_hold)
 
     # ── 8. Walk-Forward OOS Validation ─────────────────────────────────
     extra_sections = 0

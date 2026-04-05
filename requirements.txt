@@ -2,6 +2,7 @@ polygon-api-client>=1.12
 pandas>=2.0
 numpy>=1.26
 statsmodels>=0.14
+hmmlearn>=0.3
 matplotlib>=3.7
 scipy>=1.11
 python-dotenv>=1.0

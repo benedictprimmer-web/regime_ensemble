@@ -76,6 +76,38 @@ def vol_ratio(returns: pd.Series,
     return (short_vol / long_vol.replace(0, np.nan)).rename("vol_ratio")
 
 
+def _build_markov_component(
+    markov_mom: pd.Series,
+    markov_crisis: pd.Series,
+    mode: str,
+) -> Optional[pd.Series]:
+    """
+    Build the Markov component of the ensemble score.
+
+    mode='full'          → P(momentum) zeroed where P(crisis) > 0.50 (default).
+                           Treats Markov as both a directional and risk-state signal.
+
+    mode='crisis_filter' → 1 - P(crisis). Pure risk-state filter: when crisis
+                           probability is high the component approaches 0 (cash),
+                           when low it approaches 1 (full long). Ignores P(momentum)
+                           entirely. Use if the ablation shows mom_prob adds nothing
+                           beyond crisis_prob.
+
+    mode='geo_only'      → None. Excludes the Markov component; score = geo only.
+                           The lowest baseline for ablation comparison.
+
+    Returns pd.Series or None. None signals ensemble_score to skip Markov entirely.
+    """
+    if mode == "geo_only":
+        return None
+    if mode == "crisis_filter":
+        return (1.0 - markov_crisis).rename("markov_adj")
+    # mode == 'full' (default)
+    adj = markov_mom.copy()
+    adj[markov_crisis > CRISIS_THRESHOLD] = 0.0
+    return adj.rename("markov_adj")
+
+
 def ensemble_score(
     geo: pd.Series,
     markov_mom: pd.Series,
@@ -83,6 +115,7 @@ def ensemble_score(
     vix: Optional[pd.Series] = None,
     vol_ratio_series: Optional[pd.Series] = None,
     kalman: Optional[pd.Series] = None,
+    mode: str = "full",
 ) -> pd.Series:
     """
     Compute ensemble score as equal-weighted mean of component signals.
@@ -91,8 +124,8 @@ def ensemble_score(
     3-signal (Kalman): mean(geo, markov_adj, kalman_adj)
 
     Dampening is applied to the Markov component before averaging.
-    The crisis override (P(crisis) > 0.50) zeroes both Markov and Kalman.
-    Multiple dampening signals are applied multiplicatively (independent).
+    The crisis override (P(crisis) > 0.50) zeroes both Markov and Kalman
+    when mode='full'. Multiple dampening signals are applied multiplicatively.
 
     Args:
         geo              : geometric signal {0.0, 0.5, 1.0}
@@ -103,38 +136,39 @@ def ensemble_score(
                            use vol_ratio() to compute from returns
         kalman           : optional Kalman drift signal in [0, 1];
                            from kalman_signal() in src.kalman
+        mode             : how the Markov component is built — see _build_markov_component.
+                           'full' (default) preserves existing behaviour exactly.
 
     Returns:
         Series of scores in [0, 1].
     """
-    markov_adj = markov_mom.copy()
-    markov_adj[markov_crisis > CRISIS_THRESHOLD] = 0.0
+    markov_adj = _build_markov_component(markov_mom, markov_crisis, mode)
 
-    if vix is not None:
-        vix_aligned = vix.reindex(markov_adj.index, method="ffill")
-        vix_factor = 1.0 - np.clip(
-            (vix_aligned - VIX_NEUTRAL) / (VIX_FULL_SUPPRESS - VIX_NEUTRAL),
-            0.0, 1.0,
-        )
-        markov_adj = markov_adj * vix_factor
+    if markov_adj is not None:
+        if vix is not None:
+            vix_aligned = vix.reindex(markov_adj.index, method="ffill")
+            vix_factor = 1.0 - np.clip(
+                (vix_aligned - VIX_NEUTRAL) / (VIX_FULL_SUPPRESS - VIX_NEUTRAL),
+                0.0, 1.0,
+            )
+            markov_adj = markov_adj * vix_factor
 
-    if vol_ratio_series is not None:
-        vr_aligned = vol_ratio_series.reindex(markov_adj.index, method="ffill")
-        vr_factor = 1.0 - np.clip(
-            (vr_aligned - VOL_RATIO_NEUTRAL) / (VOL_RATIO_SUPPRESS - VOL_RATIO_NEUTRAL),
-            0.0, 1.0,
-        )
-        markov_adj = markov_adj * vr_factor
+        if vol_ratio_series is not None:
+            vr_aligned = vol_ratio_series.reindex(markov_adj.index, method="ffill")
+            vr_factor = 1.0 - np.clip(
+                (vr_aligned - VOL_RATIO_NEUTRAL) / (VOL_RATIO_SUPPRESS - VOL_RATIO_NEUTRAL),
+                0.0, 1.0,
+            )
+            markov_adj = markov_adj * vr_factor
 
-    components = [geo, markov_adj]
+    components = [geo] if markov_adj is None else [geo, markov_adj]
 
     if kalman is not None:
-        # Apply crisis override to Kalman signal too
-        kalman_adj = kalman.reindex(markov_adj.index, fill_value=np.nan).copy()
+        ref_idx    = markov_adj.index if markov_adj is not None else geo.index
+        kalman_adj = kalman.reindex(ref_idx, fill_value=np.nan).copy()
         kalman_adj[markov_crisis.reindex(kalman_adj.index, fill_value=0.0) > CRISIS_THRESHOLD] = 0.0
         components.append(kalman_adj)
 
-    # Markov loses one observation (AR lag) -- dropna aligns on common index
     aligned = pd.concat(components, axis=1).dropna()
     return aligned.mean(axis=1).rename("ensemble_score")
 
