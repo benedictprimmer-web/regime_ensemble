@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-Regime Ensemble — 3-Page Report Generator
-==========================================
-Produces outputs/SPY_3page_report.pdf using real cached SPY data.
+Regime Ensemble — 3-Page Overview Report (v5)
+=============================================
+Page 1: The Strategy   — two orthogonal signals, three position states (full / half / none)
+Page 2: Models in Action — real SPY 2000-2025 data, signals and probabilities
+Page 3: The Edge       — performance vs buy-and-hold, transaction costs, honest limitations
+
 No Polygon API key needed if data/cache/SPY_2000-01-01_2025-01-01.csv exists.
 
 Usage:
-    python3 generate_report_3page.py
+    python3 generate_report_overview.py
 """
 
 import sys
@@ -60,6 +63,10 @@ def _caption(ax, text, y=-0.16):
             fontsize=7.5, color=C["subtext"], ha="center", style="italic")
 
 
+def _footer(fig, text):
+    fig.text(0.5, 0.02, text, ha="center", fontsize=6.5, color=C["subtext"])
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  LOAD DATA
 # ══════════════════════════════════════════════════════════════════════════════
@@ -80,8 +87,7 @@ perf       = compute_stats(bt)
 strat = perf["Strategy (Long Only)"]
 bnh   = perf["Buy & Hold"]
 
-# Forward-return stats by regime (for panel 2)
-from src.backtest import regime_return_stats
+# Forward-return stats by regime
 from scipy import stats as scipy_stats
 aligned_ret = ret.reindex(labels.index)
 fwd_ret     = aligned_ret.shift(-1).dropna()
@@ -95,9 +101,9 @@ for reg in ["momentum", "mixed", "reversion"]:
 # Ensemble switches/year (position changes, not Markov internal transitions)
 ensemble_switches_pa = (labels != labels.shift(1)).sum() / (len(labels) / 252)
 
-# Break-even cost (Sharpe = 0 crossover) and beats-B&H threshold
-_bnh_sharpe = float(compute_stats(bt)["Buy & Hold"]["Sharpe"])
-_bps_range  = list(range(0, 31))
+# Break-even cost and beats-B&H threshold (scanning 0–30 bps)
+_bnh_sharpe   = float(compute_stats(bt)["Buy & Hold"]["Sharpe"])
+_bps_range    = list(range(0, 31))
 _cost_sharpes = [
     float(compute_stats(run_backtest(ret, labels, allow_short=False, cost_bps=b))
           ["Strategy (Long Only)"]["Sharpe"])
@@ -107,31 +113,31 @@ import numpy as _np
 breakeven_bps = int(_bps_range[_np.argmin(_np.abs(_np.array(_cost_sharpes)))])
 beats_bnh_bps = int(_bps_range[_np.argmin(_np.abs(_np.array(_cost_sharpes) - _bnh_sharpe))])
 
+# Regime distribution (% of trading days in each state)
+n_total     = len(labels)
+regime_pct  = {r: (labels == r).sum() / n_total * 100 for r in ["momentum", "mixed", "reversion"]}
+regime_days = {r: (labels == r).sum() for r in ["momentum", "mixed", "reversion"]}
+
 print("  Models ready. Generating report...")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  PAGE 1 — PLAIN ENGLISH OVERVIEW
+#  PAGE 1 — THE STRATEGY
 # ══════════════════════════════════════════════════════════════════════════════
 
 def make_page1():
     fig = plt.figure(figsize=(8.27, 11.69), facecolor="white")  # A4
-    fig.subplots_adjust(left=0.08, right=0.92, top=0.88, bottom=0.06,
-                        hspace=0.7, wspace=0.4)
 
-    # ── Title block ────────────────────────────────────────────────────────
-    fig.text(0.5, 0.95, "Regime Structure — How It Detects", ha="center", fontsize=14,
-             fontweight="bold", color=C["text"])
-    fig.text(0.5, 0.933,
+    fig.text(0.5, 0.958, "The Strategy — Two Signals, Three Positions",
+             ha="center", fontsize=14, fontweight="bold", color=C["text"])
+    fig.text(0.5, 0.941,
              "Geometric straightness ratio + Markov k=3 hidden states  ·  SPY 2000-2025  ·  v5.0",
              ha="center", fontsize=8.5, color=C["subtext"])
-
-    # ── Divider ───────────────────────────────────────────────────────────
-    fig.add_artist(plt.Line2D([0.08, 0.92], [0.9, 0.9], transform=fig.transFigure,
-                               color="#dde", linewidth=1))
+    fig.add_artist(plt.Line2D([0.08, 0.92], [0.932, 0.932],
+                               transform=fig.transFigure, color="#dde", linewidth=1))
 
     gs = gridspec.GridSpec(3, 2, figure=fig, left=0.08, right=0.92,
-                           top=0.87, bottom=0.06, hspace=0.75, wspace=0.38)
+                           top=0.908, bottom=0.06, hspace=0.78, wspace=0.38)
 
     # ── Panel 1: Two orthogonal detectors (schematic) ─────────────────────
     ax1 = fig.add_subplot(gs[0, 0])
@@ -142,126 +148,133 @@ def make_page1():
     ax1.plot(t[:30], trend[:30],  color=C["momentum"],  lw=1.8)
     ax1.plot(t[30:], choppy[30:] + trend[29], color=C["reversion"], lw=1.8)
     ax1.axvline(30, color=C["subtext"], lw=0.8, ls="--")
-    ax1.text(0.25, 0.88, "Trending", ha="center", transform=ax1.transAxes,
+    ax1.text(0.25, 0.90, "Trending", ha="center", transform=ax1.transAxes,
              fontsize=8, color=C["momentum"], fontweight="bold")
-    ax1.text(0.75, 0.88, "Choppy", ha="center", transform=ax1.transAxes,
+    ax1.text(0.75, 0.90, "Choppy", ha="center", transform=ax1.transAxes,
              fontsize=8, color=C["reversion"], fontweight="bold")
     ax1.set_xticks([]); ax1.set_yticks([])
     ax1.spines[["top", "right"]].set_visible(False)
     _section_title(ax1, "Two Orthogonal Detectors — One Ensemble")
-    _caption(ax1, "Geometric: measures path straightness over 15 days (no parameters).\n"
-             "Markov: estimates a hidden 3-state process from the full return history.\n"
-             "Combined via simple mean — no weight fitting, no in-sample optimisation.")
+    _caption(ax1, "Geometric: path straightness over 15 days (no parameters to fit).\n"
+             "Markov: hidden 3-state model estimated from the full return history.\n"
+             "Combined as a simple mean — no weight fitting, no in-sample target.")
 
     # ── Panel 2: Key statistical finding ─────────────────────────────────
     ax2 = fig.add_subplot(gs[0, 1])
     ax2.axis("off")
-    _section_title(ax2, "The Key Finding — Mixed Regime")
+    _section_title(ax2, "Why It Works — Forward Return by Regime")
 
-    # Header
-    ax2.text(0.02, 0.92, "Regime", transform=ax2.transAxes,
+    ax2.text(0.02, 0.94, "Regime", transform=ax2.transAxes,
              fontsize=8, fontweight="bold", color=C["text"], va="top")
-    ax2.text(0.42, 0.92, "Mean ret/day", transform=ax2.transAxes,
+    ax2.text(0.40, 0.94, "Mean ret/day", transform=ax2.transAxes,
              fontsize=8, fontweight="bold", color=C["text"], va="top")
-    ax2.text(0.74, 0.92, "T-stat (p)", transform=ax2.transAxes,
+    ax2.text(0.73, 0.94, "T-stat  (p)", transform=ax2.transAxes,
              fontsize=8, fontweight="bold", color=C["text"], va="top")
-    ax2.axline((0, 0.87), slope=0, color="#dde", lw=0.8, transform=ax2.transAxes)
+    ax2.axline((0, 0.89), slope=0, color="#dde", lw=0.8, transform=ax2.transAxes)
 
-    rows = [
-        ("momentum",  C["momentum"]),
-        ("mixed",     C["gold"]),
-        ("reversion", C["reversion"]),
-    ]
+    rows = [("momentum", C["momentum"]), ("mixed", C["gold"]), ("reversion", C["reversion"])]
     for i, (reg, col) in enumerate(rows):
-        d = regime_fwd[reg]
-        y = 0.78 - i * 0.22
+        d   = regime_fwd[reg]
+        y   = 0.79 - i * 0.22
         sig = "**" if d["p"] < 0.01 else ("*" if d["p"] < 0.05 else "")
         ax2.text(0.02, y, reg.title(), transform=ax2.transAxes,
                  fontsize=8.5, color=col, fontweight="bold", va="top")
-        ax2.text(0.42, y, "%+.3f%%" % d["mean_pct"], transform=ax2.transAxes,
+        ax2.text(0.40, y, "%+.3f%%" % d["mean_pct"], transform=ax2.transAxes,
                  fontsize=8.5, color=col, va="top")
-        ax2.text(0.74, y, "%.2f (%.3f)%s" % (d["t"], d["p"], sig),
+        ax2.text(0.73, y, "%.2f (%.3f)%s" % (d["t"], d["p"], sig),
                  transform=ax2.transAxes, fontsize=8.5, color=col, va="top")
 
-    ax2.text(0.02, 0.12,
-             "Mixed = detectors disagree. Despite uncertainty,\n"
-             "SPY drifts upward. We hold a half-position (+0.5),\n"
-             "not cash. This is the most significant signal.",
+    ax2.text(0.02, 0.13,
+             "Mixed regime (detectors disagree) still drifts positive.\n"
+             "T=3.21** is the strongest signal — justifies the half-position\n"
+             "instead of defaulting to cash on uncertainty.",
              transform=ax2.transAxes, fontsize=7.5, color=C["subtext"], va="top")
 
-    # ── Panel 3: Geometric model ──────────────────────────────────────────
+    # ── Panel 3: Geometric detector ───────────────────────────────────────
     ax3 = fig.add_subplot(gs[1, 0])
     np.random.seed(7)
-    days = np.arange(15)
-    straight  = np.linspace(0, 0.3, 15) + 0.01 * np.random.randn(15)
-    zigzag    = 0.04 * np.random.randn(15).cumsum()
-    ax3.plot(days, straight, color=C["momentum"], lw=2, label="Momentum path")
-    ax3.plot(days, zigzag,   color=C["reversion"], lw=2, label="Reversion path", ls="--")
+    days    = np.arange(15)
+    straight = np.linspace(0, 0.3, 15) + 0.01 * np.random.randn(15)
+    zigzag   = 0.04 * np.random.randn(15).cumsum()
+    ax3.plot(days, straight, color=C["momentum"],  lw=2, label="Momentum path  (ratio → 1)")
+    ax3.plot(days, zigzag,   color=C["reversion"], lw=2, label="Reversion path (ratio → 0)", ls="--")
     ax3.set_xticks([]); ax3.set_yticks([])
     ax3.spines[["top", "right"]].set_visible(False)
     ax3.legend(fontsize=7, loc="upper left", framealpha=0.6)
-    _section_title(ax3, "Detector 1 — Geometric (path shape)")
+    _section_title(ax3, "Detector 1 — Geometric (path shape, 15-day window)")
     _caption(ax3,
-             "ratio = |cumulative return| / sum(|daily returns|)  over 15 days.\n"
-             "Ratio near 1.0 = monotonic move. Near 0.0 = oscillation around origin.\n"
-             "Thresholds are adaptive percentiles (70th/30th) -- zero hand-tuning.")
+             "ratio = |cumulative return| / Σ|daily returns|  over 15 days.\n"
+             "Near 1.0 = straight-line move (momentum). Near 0.0 = oscillation (reversion).\n"
+             "Thresholds are adaptive percentiles — no fixed values to tune.")
 
-    # ── Panel 4: Markov model ─────────────────────────────────────────────
+    # ── Panel 4: Markov detector ──────────────────────────────────────────
     ax4 = fig.add_subplot(gs[1, 1])
-    m_stats = regime_stats
-    mom_mean  = m_stats.get("MOMENTUM", {}).get("mean", 0.00085) * 100
-    chp_mean  = m_stats.get("CHOPPY",   {}).get("mean", -0.00004) * 100
-    cri_mean  = m_stats.get("CRISIS",   {}).get("mean", -0.00167) * 100
-    regimes = ["Momentum\n(trending up)", "Choppy\n(sideways)", "Crisis\n(falling fast)"]
-    means   = [mom_mean, chp_mean, cri_mean]
-    colors  = [C["momentum"], C["mixed"], C["reversion"]]
-    bars    = ax4.barh(regimes, means, color=colors, alpha=0.85, height=0.5)
+    m_stats  = regime_stats
+    mom_mean = m_stats.get("MOMENTUM", {}).get("mean", 0.00085) * 100
+    chp_mean = m_stats.get("CHOPPY",   {}).get("mean", -0.00004) * 100
+    cri_mean = m_stats.get("CRISIS",   {}).get("mean", -0.00167) * 100
+    regimes  = ["Momentum\n(trending up)", "Choppy\n(sideways)", "Crisis\n(falling fast)"]
+    means    = [mom_mean, chp_mean, cri_mean]
+    colors   = [C["momentum"], C["mixed"], C["reversion"]]
+    ax4.barh(regimes, means, color=colors, alpha=0.85, height=0.5)
     ax4.axvline(0, color=C["subtext"], lw=0.8)
     ax4.set_xlabel("Mean daily return (%)", fontsize=8)
     ax4.spines[["top", "right"]].set_visible(False)
     ax4.tick_params(labelsize=8)
-    _section_title(ax4, "Detector 2 — Markov AR(1), k=3")
+    _section_title(ax4, "Detector 2 — Markov AR(1), k=3 hidden states")
     _caption(ax4,
-             "MarkovAutoregression k=3 selected by BIC. Fitted on training data only;\n"
-             "Hamilton filter applied to test data (no look-ahead). Crisis regime\n"
-             "(P>0.50) suppresses all buy signals regardless of geometric signal.",
+             "k=3 selected by BIC (ΔBIC=82 vs k=2). Fitted on training data only;\n"
+             "Hamilton filter on test data — no look-ahead. Crisis (P>0.50) overrides\n"
+             "all buy signals regardless of what the geometric detector says.",
              y=-0.32)
 
-    # ── Panel 5: Headline results ──────────────────────────────────────────
+    # ── Panel 5: Position sizing rule — Full / Half / None ────────────────
     ax5 = fig.add_subplot(gs[2, :])
     ax5.axis("off")
-    _section_title(ax5, "Headline Results  (SPY 2000-2025, zero transaction costs)")
+    _section_title(ax5, "The Decision Rule — Full / Half / None")
 
-    headers = ["", "CAGR", "Sharpe Ratio", "Max Drawdown", "T-stat (p-val.)"]
-    row1    = ["Strategy (Regime Ensemble)", strat["CAGR"], strat["Sharpe"],
-               strat["Max DD"], "%s (%s)" % (strat["T-stat"], strat["P-value"])]
-    row2    = ["Buy & Hold (benchmark)",     bnh["CAGR"],   bnh["Sharpe"],
-               bnh["Max DD"],   "%s (%s)" % (bnh["T-stat"], bnh["P-value"])]
+    # Score formula
+    ax5.text(0.5, 0.97,
+             "score  =  mean( geometric_signal ,  markov_momentum_probability )",
+             transform=ax5.transAxes, ha="center", fontsize=9,
+             color=C["text"], va="top", fontfamily="monospace")
 
-    col_x = [0.0, 0.36, 0.52, 0.66, 0.82]
-    for j, h in enumerate(headers):
-        ax5.text(col_x[j], 0.88, h, transform=ax5.transAxes,
-                 fontsize=8.5, fontweight="bold", color=C["text"], va="top")
+    # Three state boxes
+    box_specs = [
+        (0.03, "FULL LONG", "position = +1.0", "score ≥ 0.65",
+         "Trend confirmed by both detectors.", "momentum"),
+        (0.36, "HALF LONG", "position = +0.5", "0.35 ≤ score < 0.65",
+         "Detectors disagree — hold half.", "mixed"),
+        (0.69, "CASH",      "position =  0.0", "score < 0.35",
+         "Reversion or crisis — step aside.", "reversion"),
+    ]
 
-    for j, val in enumerate(row1):
-        col = C["momentum"] if j > 0 else C["text"]
-        ax5.text(col_x[j], 0.65, str(val), transform=ax5.transAxes,
-                 fontsize=9 if j > 0 else 8.5, color=col,
-                 fontweight="bold" if j > 0 else "normal", va="top")
+    for (x, label, pos_str, rule, desc, reg) in box_specs:
+        col  = C[reg]
+        n    = regime_days[reg]
+        pct  = regime_pct[reg]
 
-    for j, val in enumerate(row2):
-        ax5.text(col_x[j], 0.42, str(val), transform=ax5.transAxes,
-                 fontsize=8.5, color=C["subtext"], va="top")
+        ax5.add_patch(mpatches.FancyBboxPatch(
+            (x, 0.06), 0.29, 0.72,
+            boxstyle="round,pad=0.015",
+            facecolor=col, alpha=0.10,
+            edgecolor=col, linewidth=1.8,
+            transform=ax5.transAxes, clip_on=False))
 
-    ax5.axline((0, 0.78), slope=0, color="#dde", lw=0.8,
-               transform=ax5.transAxes)
-    ax5.text(0.0, 0.12,
-             "⚠  At 10bps round-trip costs, Sharpe drops to 0.28. "
-             "Strategy breaks even around %dbps. Transaction costs are material -- see page 3." % breakeven_bps,
-             transform=ax5.transAxes, fontsize=7.5, color=C["gold"], va="top")
+        ax5.text(x + 0.145, 0.70, label, transform=ax5.transAxes,
+                 fontsize=11, fontweight="bold", color=col, ha="center", va="top")
+        ax5.text(x + 0.145, 0.54, pos_str, transform=ax5.transAxes,
+                 fontsize=9.5, color=col, ha="center", va="top",
+                 fontfamily="monospace")
+        ax5.text(x + 0.145, 0.41, rule, transform=ax5.transAxes,
+                 fontsize=8, color=C["subtext"], ha="center", va="top")
+        ax5.text(x + 0.145, 0.30, desc, transform=ax5.transAxes,
+                 fontsize=7.8, color=C["subtext"], ha="center", va="top", style="italic")
+        ax5.text(x + 0.145, 0.15,
+                 f"{pct:.0f}% of trading days  ({n:,} days  ·  SPY 2000-2025)",
+                 transform=ax5.transAxes, fontsize=7.5, color=col, ha="center", va="top")
 
-    fig.text(0.5, 0.02, "Page 2 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
-             ha="center", fontsize=6.5, color=C["subtext"])
+    _footer(fig, "Page 1 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble")
     return fig
 
 
@@ -271,19 +284,18 @@ def make_page1():
 
 def make_page2():
     fig = plt.figure(figsize=(8.27, 11.69), facecolor="white")
-    fig.subplots_adjust(left=0.09, right=0.95, top=0.87, bottom=0.06,
-                        hspace=0.45)
+    fig.subplots_adjust(left=0.09, right=0.95, top=0.87, bottom=0.06, hspace=0.45)
 
-    fig.text(0.5, 0.96, "Models in Action — SPY 2000-2025 (Real Data)",
+    fig.text(0.5, 0.960, "Models in Action — SPY 2000-2025 (Real Data)",
              ha="center", fontsize=14, fontweight="bold", color=C["text"])
-    fig.text(0.5, 0.945,
-             "Three panels: price coloured by regime, geometric detector signal, Markov probabilities",
+    fig.text(0.5, 0.943,
+             "Price coloured by regime  ·  geometric straightness ratio  ·  Markov filtered probabilities",
              ha="center", fontsize=9, color=C["subtext"])
     fig.add_artist(plt.Line2D([0.09, 0.95], [0.935, 0.935],
                                transform=fig.transFigure, color="#dde", lw=1))
 
     gs = gridspec.GridSpec(3, 1, figure=fig, left=0.09, right=0.95,
-                           top=0.87, bottom=0.06, hspace=0.42)
+                           top=0.870, bottom=0.06, hspace=0.42)
 
     # ── Panel 1: SPY price coloured by regime ─────────────────────────────
     ax1 = fig.add_subplot(gs[0])
@@ -294,16 +306,17 @@ def make_page2():
     for i in range(len(prices_v) - 1):
         ax1.plot(prices_v.index[i:i+2], prices_v.iloc[i:i+2],
                  color=colors_v.iloc[i], lw=1.1, alpha=0.9)
-    patches = [mpatches.Patch(color=C[r], label=r.title())
-               for r in ["momentum", "reversion", "mixed"]]
-    ax1.legend(handles=patches, loc="upper left", fontsize=8, framealpha=0.7)
+    patches = [mpatches.Patch(color=C["momentum"],  label="Momentum — Full long (+1.0)"),
+               mpatches.Patch(color=C["mixed"],     label="Mixed — Half long (+0.5)"),
+               mpatches.Patch(color=C["reversion"], label="Reversion/Crisis — Cash (0.0)")]
+    ax1.legend(handles=patches, loc="upper left", fontsize=8, framealpha=0.75)
     ax1.set_ylabel("SPY Close ($)", fontsize=8)
     ax1.set_xticks([])
     ax1.spines[["top", "right"]].set_visible(False)
     _section_title(ax1, "SPY Price — Coloured by Ensemble Regime")
     _caption(ax1,
-             "Green = momentum (+1). Grey = mixed (+0.5, half long). Red = reversion/crisis (cash).\n"
-             "25 years shown: dot-com crash (2000-02), GFC (2008), COVID (2020), bear market (2022).")
+             "Green = momentum (+1.0 position). Grey = mixed (+0.5). Red = reversion or crisis (flat).\n"
+             "25 years: dot-com (2000-02), GFC (2008), COVID (2020), bear market (2022).")
 
     # ── Panel 2: Geometric straightness ratio ─────────────────────────────
     ax2 = fig.add_subplot(gs[1], sharex=ax1)
@@ -325,36 +338,34 @@ def make_page2():
     ax2.spines[["top", "right"]].set_visible(False)
     _section_title(ax2, "Geometric Detector — Straightness Ratio (15-day window)")
     _caption(ax2,
-             "Near 1.0 = price moved in a straight line (momentum). "
-             "Near 0.0 = price zigzagged (mean-reversion).\n"
+             "Near 1.0 = price moved in a straight line (momentum). Near 0.0 = price zigzagged.\n"
              "Thresholds are adaptive percentiles — no fixed values to hand-tune.")
 
     # ── Panel 3: Markov filtered probabilities ────────────────────────────
     ax3 = fig.add_subplot(gs[2], sharex=ax1)
-    ax3.fill_between(mom_prob.index,    mom_prob,    0, alpha=0.5,
-                     color=C["momentum"],  label="P(momentum) — probability of trending state")
-    ax3.fill_between(crisis_prob.index, crisis_prob, 0, alpha=0.5,
-                     color=C["reversion"], label="P(crisis) — probability of falling-fast state")
-    ax3.axhline(0.5, color=C["subtext"], ls=":", lw=0.8,
-                label="Crisis override threshold (0.50)")
+    ax3.fill_between(mom_prob.index,    mom_prob,    0, alpha=0.50,
+                     color=C["momentum"],  label="P(momentum) — trending state")
+    ax3.fill_between(crisis_prob.index, crisis_prob, 0, alpha=0.50,
+                     color=C["reversion"], label="P(crisis) — falling-fast state")
+    ax3.axhline(0.5, color=C["subtext"], ls=":", lw=0.9,
+                label="Crisis override threshold (0.50) — suppresses all buys above this")
     ax3.set_ylim(0, 1)
     ax3.set_ylabel("Probability", fontsize=8)
     ax3.legend(fontsize=7.5, loc="upper right", framealpha=0.7)
     ax3.spines[["top", "right"]].set_visible(False)
     ax3.tick_params(axis="x", labelsize=8)
-    _section_title(ax3, "Markov Detector — Filtered State Probabilities (k=3 regimes)")
+    _section_title(ax3, "Markov Detector — Filtered State Probabilities (k=3)")
     _caption(ax3,
-             "When P(crisis) crosses 0.50, buy signals are suppressed regardless of other indicators.\n"
-             "Filtered probabilities only — no look-ahead bias.")
+             "When P(crisis) > 0.50, buy signals are suppressed regardless of all other indicators.\n"
+             "Filtered probabilities only — Hamilton filter, no look-ahead bias.")
 
     fig.autofmt_xdate(rotation=25, ha="right")
-    fig.text(0.5, 0.02, "Page 3 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
-             ha="center", fontsize=6.5, color=C["subtext"])
+    _footer(fig, "Page 2 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble")
     return fig
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  PAGE 3 — RESULTS & LIMITATIONS
+#  PAGE 3 — THE EDGE & LIMITATIONS
 # ══════════════════════════════════════════════════════════════════════════════
 
 def make_page3():
@@ -362,32 +373,64 @@ def make_page3():
     fig.subplots_adjust(left=0.09, right=0.95, top=0.87, bottom=0.12,
                         hspace=0.90, wspace=0.38)
 
-    fig.text(0.5, 0.96, "Regime Ensemble",
-             ha="center", fontsize=18, fontweight="bold", color=C["text"])
-    fig.text(0.5, 0.942, "Overview — Performance vs Buy & Hold  ·  SPY 2000-2025  ·  v5.0",
+    fig.text(0.5, 0.960, "The Edge — Performance vs Buy & Hold",
+             ha="center", fontsize=16, fontweight="bold", color=C["text"])
+    fig.text(0.5, 0.942,
+             "Risk-adjusted return, not raw return  ·  SPY 2000-2025  ·  v5.0",
              ha="center", fontsize=9, color=C["subtext"])
-    fig.add_artist(plt.Line2D([0.09, 0.95], [0.932, 0.932],
+    fig.add_artist(plt.Line2D([0.09, 0.95], [0.933, 0.933],
                                transform=fig.transFigure, color="#dde", lw=1))
 
     gs = gridspec.GridSpec(3, 2, figure=fig, left=0.09, right=0.95,
                            top=0.87, bottom=0.12, hspace=0.90, wspace=0.55)
 
-    # ── Panel 1: Equity curves ─────────────────────────────────────────────
+    # ── Panel 1: Equity curves with regime shading ────────────────────────
     ax1 = fig.add_subplot(gs[0, :])
-    ax1.plot(bt.index, bt["equity_bnh"],      color=C["bnh"],      lw=1.8,
-             label=f"Buy & Hold  (CAGR {bnh['CAGR']}, Sharpe {bnh['Sharpe']})")
-    ax1.plot(bt.index, bt["equity_strategy"], color=C["strategy"], lw=1.8,
-             label=f"Regime Ensemble  (CAGR {strat['CAGR']}, Sharpe {strat['Sharpe']})")
+
+    # Shade reversion/crisis periods light red so it's obvious when we were flat
+    prev_lab   = None
+    span_start = None
+    for date, lab in labels.items():
+        if lab == "reversion" and prev_lab != "reversion":
+            span_start = date
+        elif lab != "reversion" and prev_lab == "reversion" and span_start is not None:
+            ax1.axvspan(span_start, date, alpha=0.07, color=C["reversion"], lw=0, zorder=0)
+            span_start = None
+        prev_lab = lab
+    if prev_lab == "reversion" and span_start is not None:
+        ax1.axvspan(span_start, labels.index[-1], alpha=0.07, color=C["reversion"], lw=0, zorder=0)
+
+    ax1.plot(bt.index, bt["equity_bnh"],
+             color=C["bnh"], lw=1.8,
+             label=f"Buy & Hold  (CAGR {bnh['CAGR']}, Sharpe {bnh['Sharpe']}, Max DD {bnh['Max DD']})")
+    ax1.plot(bt.index, bt["equity_strategy"],
+             color=C["strategy"], lw=1.8,
+             label=f"Regime Ensemble  (CAGR {strat['CAGR']}, Sharpe {strat['Sharpe']}, Max DD {strat['Max DD']})")
     ax1.axhline(1.0, color="#dde", lw=0.7, ls="--")
     ax1.set_ylabel("Portfolio value (starting = 1.0)", fontsize=8)
-    ax1.legend(fontsize=8, framealpha=0.8)
+    ax1.legend(fontsize=8, framealpha=0.85, loc="upper left")
     ax1.spines[["top", "right"]].set_visible(False)
     ax1.tick_params(axis="x", labelsize=8)
-    _section_title(ax1, "Equity Curves — Strategy vs Buy & Hold (0 bps costs)")
+
+    # Annotate the major crashes where going to cash protected capital
+    for (yr, label_txt, x_offset) in [
+        ("2001-09-01", "Dot-com", 0),
+        ("2008-10-01", "GFC",     0),
+        ("2020-03-20", "COVID",   0),
+        ("2022-06-01", "2022",    0),
+    ]:
+        try:
+            ax1.axvline(pd.Timestamp(yr), color=C["reversion"], lw=0.5,
+                        ls=":", alpha=0.4, zorder=1)
+        except Exception:
+            pass
+
+    _section_title(ax1, "Equity Curves — Strategy vs Buy & Hold (0 bps transaction costs)")
     _caption(ax1,
-             "Strategy Sharpe (0.68) beats buy-and-hold (0.44) with far lower drawdown (-16.7% vs -56.5%).\n"
-             "CAGR trails B&H (+5.7% vs +8.6%) -- the edge is risk-adjusted return, not raw return.",
-             y=-0.28)
+             "Red shading = periods the strategy held cash (reversion regime). "
+             "Strategy sidesteps the worst of each major crash.\n"
+             "The edge is risk-adjusted: Sharpe 0.68 vs 0.44, drawdown -16.7% vs -56.5%. CAGR trails (+5.7% vs +8.6%).",
+             y=-0.30)
 
     # ── Panel 2: Drawdown ──────────────────────────────────────────────────
     ax2 = fig.add_subplot(gs[1, 0])
@@ -398,71 +441,79 @@ def make_page3():
     ax2.fill_between(bt.index, strat_dd, 0, alpha=0.55, color=C["strategy"],
                      label=f"Strategy  (max {strat['Max DD']})")
     ax2.set_ylabel("Drawdown from peak", fontsize=8)
-    ax2.legend(fontsize=7.5, loc="lower left", framealpha=0.8)
+    ax2.legend(fontsize=7.5, loc="lower left", framealpha=0.85)
     ax2.spines[["top", "right"]].set_visible(False)
     ax2.tick_params(axis="x", labelsize=7)
     _section_title(ax2, "Drawdown Comparison")
-    ax2.text(0.0, -0.28, "Strategy reduces drawdowns across all major crashes\n(dot-com, GFC, COVID, 2022).",
+    ax2.text(0.0, -0.30,
+             "Strategy trims drawdowns across all major crashes\n(dot-com, GFC, COVID, 2022).",
              transform=ax2.transAxes, fontsize=7.5, color=C["subtext"], ha="left", style="italic")
 
     # ── Panel 3: Transaction cost sensitivity ─────────────────────────────
     ax3 = fig.add_subplot(gs[1, 1])
-    from src.backtest import run_backtest as rb
+    from src.backtest import run_backtest as _rb
     cost_bps  = [0, 5, 10, 20]
     sharpes   = []
     for bps in cost_bps:
-        bt_c = rb(ret, labels, allow_short=False, cost_bps=bps)
+        bt_c = _rb(ret, labels, allow_short=False, cost_bps=bps)
         s    = compute_stats(bt_c)["Strategy (Long Only)"]["Sharpe"]
         sharpes.append(float(s))
 
-    colors_bar = [C["momentum"] if s > 0.7 else C["gold"] if s > 0 else C["reversion"]
+    colors_bar = [C["momentum"] if s > float(bnh["Sharpe"]) else
+                  (C["gold"]     if s > 0 else C["reversion"])
                   for s in sharpes]
     bars = ax3.barh([f"{b} bps" for b in cost_bps], sharpes,
-                    color=colors_bar, alpha=0.85, height=0.5)
+                    color=colors_bar, alpha=0.88, height=0.5)
     ax3.axvline(0, color=C["subtext"], lw=0.8)
-    ax3.axvline(1.0, color=C["subtext"], lw=0.6, ls=":")
+    ax3.axvline(float(bnh["Sharpe"]), color=C["bnh"], lw=0.9, ls="--",
+                label=f"B&H Sharpe ({bnh['Sharpe']})")
+    ax3.legend(fontsize=7, loc="lower right", framealpha=0.8)
     ax3.text(0.98, 0.04, "Sharpe Ratio \u2192", transform=ax3.transAxes,
              ha="right", va="bottom", fontsize=7.5, color=C["subtext"])
     for bar, val in zip(bars, sharpes):
-        ax3.text(max(val + 0.03, 0.05), bar.get_y() + bar.get_height()/2,
+        ax3.text(max(val + 0.02, 0.04), bar.get_y() + bar.get_height() / 2,
                  f"{val:.2f}", va="center", fontsize=8.5, color=C["text"])
     ax3.spines[["top", "right"]].set_visible(False)
     ax3.tick_params(labelsize=8)
     _section_title(ax3, "Transaction Cost Sensitivity")
-    ax3.text(0.0, -0.18, "~%.0f switches/yr; Sharpe > B&H to ~%dbps; breaks even at ~%dbps.\nUse --min-hold 3 to cut switches and extend the profitable range." % (ensemble_switches_pa, beats_bnh_bps, breakeven_bps),
+    ax3.text(0.0, -0.20,
+             "~%.0f switches/yr · beats B&H Sharpe to ~%d bps · breaks even at ~%d bps.\n"
+             "--min-hold 3 reduces switches and extends the profitable range." %
+             (ensemble_switches_pa, beats_bnh_bps, breakeven_bps),
              transform=ax3.transAxes, fontsize=7.5, color=C["subtext"], ha="left", style="italic")
 
     # ── Panel 4: Limitations ──────────────────────────────────────────────
     ax4 = fig.add_subplot(gs[2, :])
     ax4.axis("off")
-    _section_title(ax4, "Key Limitations — Read Before Drawing Conclusions")
+    _section_title(ax4, "Honest Limitations — Read Before Drawing Conclusions")
 
     limits = [
-        ("Calibrated on SPY -- multi-asset validation available",
-         "Thresholds and Markov parameters are fitted on SPY. Use --multi-asset to run cross-validation "
-         "on QQQ, IWM, TLT, GLD as a robustness check (not a per-asset recalibration)."),
-        ("Transaction costs constrain the edge",
-         "~%.0f ensemble switches/year. Sharpe >B&H up to ~%dbps round-trip; "
-         "breaks even at ~%dbps. Use --min-hold 3 to reduce switches." % (ensemble_switches_pa, beats_bnh_bps, breakeven_bps)),
-        ("In-sample threshold calibration",
-         "Percentile thresholds (70th/30th) and ensemble cutoffs are fit on the full dataset. A real deployment "
-         "requires expanding-window recalibration from a fixed start date."),
-        ("Reversion signal is not significant",
-         "Individual regime T-stats: mixed=3.21** (p=0.001), momentum=1.33 (p=0.18), reversion=-0.35 (p=0.73). "
-         "Do not short on the reversion signal."),
         ("Strategy CAGR trails buy-and-hold",
-         "+5.7% vs +8.6% over 25 years at zero cost. The edge is Sharpe (0.68 vs 0.44) and drawdown (-16.7% vs -56.5%), "
-         "not raw return."),
+         "+5.7% vs +8.6% over 25 years at zero cost. "
+         "The edge is Sharpe (0.68 vs 0.44) and max drawdown (-16.7% vs -56.5%). "
+         "This is a risk-reduction strategy, not an alpha generator."),
+        ("Transaction costs are material",
+         "~%.0f position switches/year. Sharpe beats B&H up to ~%d bps round-trip; "
+         "strategy breaks even at ~%d bps. Use --min-hold 3 to cut switches." %
+         (ensemble_switches_pa, beats_bnh_bps, breakeven_bps)),
+        ("In-sample threshold calibration",
+         "Percentile thresholds (70th/30th) and ensemble cutoffs (0.65/0.35) are fit on the full dataset. "
+         "A real deployment requires expanding-window recalibration — see --expanding."),
+        ("Reversion signal is not statistically significant",
+         "Regime T-stats: mixed=3.21** (p=0.001), momentum=1.33 (p=0.18), reversion=-0.35 (p=0.73). "
+         "The strategy avoids reversion periods but does not short them."),
+        ("Calibrated on SPY — multi-asset not validated per-asset",
+         "Thresholds are fitted on SPY. --multi-asset applies the same model to QQQ/IWM/TLT/GLD as "
+         "a robustness check, but each asset's regime structure differs."),
     ]
     for i, (title, body) in enumerate(limits):
-        y = 0.90 - i * 0.175
-        ax4.text(0.01, y, f"⚠  {title}", transform=ax4.transAxes,
+        y = 0.91 - i * 0.177
+        ax4.text(0.01, y,       f"⚠  {title}", transform=ax4.transAxes,
                  fontsize=8.5, fontweight="bold", color=C["gold"], va="top")
         ax4.text(0.01, y - 0.07, f"    {body}", transform=ax4.transAxes,
                  fontsize=7.8, color=C["subtext"], va="top")
 
-    fig.text(0.5, 0.02, "Page 1 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble",
-             ha="center", fontsize=6.5, color=C["subtext"])
+    _footer(fig, "Page 3 of 3  ·  regime_ensemble v5.0  ·  github.com/benedictprimmer-web/regime_ensemble")
     return fig
 
 
@@ -470,9 +521,9 @@ def make_page3():
 #  SAVE
 # ══════════════════════════════════════════════════════════════════════════════
 
-out_path = OUTPUT_DIR / "SPY_3page_report.pdf"
+out_path = OUTPUT_DIR / "SPY_overview_report.pdf"
 with PdfPages(out_path) as pdf:
-    for page_fn in [make_page3, make_page1, make_page2]:
+    for page_fn in [make_page1, make_page2, make_page3]:
         fig = page_fn()
         pdf.savefig(fig, bbox_inches="tight", facecolor="white")
         plt.close(fig)
