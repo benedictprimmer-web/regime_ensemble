@@ -32,6 +32,7 @@ v6.0 adds vol-ratio dampening, multi-scale geometric, and expanding-window OOS v
 | [3-Page Overview (PDF)](docs/SPY_3page_report.pdf) | v5 | General | Plain-English walkthrough: price, signals, equity curves, limitations |
 | [Technical Quant Report (PDF)](docs/SPY_quant_report.pdf) | v5 | Quantitative | KDE distributions, K-S tests, transition matrix, rolling IC, full attribution |
 | [v6 Technical Report (PDF)](docs/SPY_v6_report.pdf) | **v6** | Quantitative | Vol ratio dampening, multi-scale geometric, expanding-window OOS validation |
+| [v7 Research Report (PDF)](docs/SPY_v7_research_report.pdf) | **v7** | Research | Directional geometric and continuous sizing: results, analysis, and why they underperform |
 | [v4/v5 Changes (PDF)](docs/v4v5_changes_report.pdf) | v4/v5 | Developer | What changed: half-position mixed regime, persistence filter, walk-forward OOS |
 
 ---
