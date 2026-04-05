@@ -341,7 +341,7 @@ def make_page3(pdf):
     ]
     for j, line in enumerate(label_code):
         ax.text(0.06, y - 0.010 - j * 0.012, line, va="top", **MONO_FONT)
-    y -= 0.080
+    y -= 0.100
 
     ax.text(0.06, y,
             "This applies in fit_markov3() (full-sample), fit_and_filter_markov() (walk-forward), and",
