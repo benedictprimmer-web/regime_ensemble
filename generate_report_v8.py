@@ -174,6 +174,20 @@ print("  Kalman-Markov correlation: %.3f" % corr_km)
 print("  Kalman-Geo correlation:    %.3f" % corr_kg)
 print("  Baseline  Sharpe=%.2f  CAGR=%.1f%%" % (sh_b, cagr_b * 100))
 print("  +Kalman   Sharpe=%.2f  CAGR=%.1f%%" % (sh_k, cagr_k * 100))
+
+# Compute actual break-even points (Sharpe = B&H Sharpe) for the caption
+def _breakeven_vs_bnh(cost_arr, bnh_sharpe, bps_arr):
+    """Find bps where strategy Sharpe crosses B&H Sharpe (linear interpolation)."""
+    for i in range(1, len(cost_arr)):
+        if cost_arr[i] <= bnh_sharpe <= cost_arr[i - 1]:
+            t = (bnh_sharpe - cost_arr[i - 1]) / (cost_arr[i] - cost_arr[i - 1])
+            return bps_arr[i - 1] + t * (bps_arr[i] - bps_arr[i - 1])
+    return None  # never crosses in range
+
+be_base = _breakeven_vs_bnh(cost_base, bnh_perf["Sharpe"], bps_range)
+be_kal  = _breakeven_vs_bnh(cost_kal,  bnh_perf["Sharpe"], bps_range)
+print("  Baseline break-even vs B&H: %.1f bps" % (be_base or float("nan")))
+print("  Kalman   break-even vs B&H: %.1f bps" % (be_kal  or float("nan")))
 print("Generating report...")
 
 
@@ -358,8 +372,10 @@ def make_page2():
              fontsize=8, color=C["sub"])
     _style(ax3)
     _tc(ax3, "Sharpe vs Transaction Cost — Baseline vs +Kalman (0–30 bps)")
+    # Use computed break-even values — Kalman starts lower so crosses B&H much sooner
     _caption(ax3,
-             "Both strategies degrade at similar rates. Strategy breaks even vs B&H at approximately 12-17 bps round-trip.",
+             "Baseline breaks even vs B&H at ~%.0f bps. +Kalman crosses B&H earlier (~%.0f bps) because it starts lower (Sharpe %.2f vs %.2f)." % (
+                 be_base or 0, be_kal or 0, sh_k, sh_b),
              y=-0.12)
 
     # ── Panel 4 left: Performance comparison table ────────────────────────
