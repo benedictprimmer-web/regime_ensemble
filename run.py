@@ -43,7 +43,7 @@ from src.data        import fetch_daily_bars, log_returns, fetch_multi, vix_leve
 from src.geometric   import geometric_signal, straightness_ratio, MULTI_WINDOWS
 from src.markov      import fit_markov3, select_k
 from src.ensemble    import ensemble_score, regime_labels, vol_ratio
-from src.backtest    import compute_stats, regime_return_stats, run_backtest
+from src.backtest    import compute_stats, regime_return_stats, run_backtest, attribution_grid
 from src.walkforward import walk_forward
 from src.expanding   import expanding_backtest
 
@@ -682,6 +682,29 @@ def main() -> None:
     print(stats_df.to_string())
     print("\n  Interpretation guide:  |t| > 2.0, p < 0.05 = statistically significant")
     print("  Momentum signal is typically significant; reversion is weaker.")
+
+    # ── 6b. Signal Attribution Grid ───────────────────────────────────
+    _section("6b. SIGNAL ATTRIBUTION GRID  (geo × markov forward return)")
+    grid = attribution_grid(ret, geo, mom_prob)
+    mom_bins = ["low (<0.33)", "mid (0.33-0.67)", "high (>0.67)"]
+    hdr = "Geo / Markov"
+    print(f"  {hdr:<14s}  {'low (<0.33)':>22s}  {'mid (0.33-0.67)':>22s}  {'high (>0.67)':>22s}")
+    print("  " + "─" * 82)
+    for g in ["reversion", "mixed", "momentum"]:
+        cells = [r for r in grid if r["geo"] == g]
+        cell_strs = []
+        for c in cells:
+            if np.isnan(c["mean_pct"]):
+                cell_strs.append(f"{'n/a':>22s}")
+            else:
+                sig = "[*]" if c["p"] < 0.05 else ("[~]" if c["p"] < 0.10 else "   ")
+                cell_strs.append(f"{c['mean_pct']:+.4f}%  t={c['t']:+.2f} {sig} n={c['n']:4d}")
+        print(f"  {g:<14s}  {'  '.join(cell_strs)}")
+    print("\n  Significance: [*] p<0.05  [~] p<0.10  [ ] not significant")
+    print("  Rows=geo signal, Cols=Markov P(momentum) bin")
+    print("  Diagonal: both signals agree. Off-diagonal: signals disagree.")
+    print("  If left column (markov=low) has negative/low returns, Markov's")
+    print("  edge is risk-avoidance (crisis filter), not direction.")
 
     # ── 7. Backtest + Cost Sensitivity ────────────────────────────────
     _section("7. BACKTEST RESULTS")

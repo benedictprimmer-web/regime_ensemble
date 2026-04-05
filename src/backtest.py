@@ -158,6 +158,47 @@ def compute_stats(bt: pd.DataFrame, raw: bool = False) -> dict:
     }
 
 
+def attribution_grid(
+    ret: pd.Series,
+    geo: pd.Series,
+    markov_mom: pd.Series,
+) -> list:
+    """
+    3x3 forward-return grid: geo signal level × Markov P(momentum) bin.
+
+    Rows: geometric signal ∈ {0.0 reversion, 0.5 mixed, 1.0 momentum}
+    Cols: markov_mom ∈ {low <0.33, mid 0.33–0.67, high >0.67}
+
+    Each cell: (mean_fwd_return_pct, t_stat, p_value, n_days).
+
+    Returns a list of dicts, one per non-empty cell, suitable for printing.
+    """
+    df = pd.DataFrame({
+        "geo": geo,
+        "mom": markov_mom,
+        "fwd": ret.shift(-1),
+    }).dropna()
+
+    geo_labels = {0.0: "reversion", 0.5: "mixed", 1.0: "momentum"}
+    mom_bins   = [0.0, 0.333, 0.667, 1.001]
+    mom_labels = ["low (<0.33)", "mid (0.33-0.67)", "high (>0.67)"]
+
+    df["geo_lbl"] = df["geo"].map(geo_labels)
+    df["mom_lbl"] = pd.cut(df["mom"], bins=mom_bins, labels=mom_labels, include_lowest=True)
+
+    rows = []
+    for g in ["reversion", "mixed", "momentum"]:
+        for m in mom_labels:
+            cell = df[(df["geo_lbl"] == g) & (df["mom_lbl"] == m)]["fwd"]
+            n = len(cell)
+            if n < 5:
+                rows.append({"geo": g, "mom_bin": m, "mean_pct": np.nan, "t": np.nan, "p": np.nan, "n": n})
+            else:
+                t, p = stats.ttest_1samp(cell, 0)
+                rows.append({"geo": g, "mom_bin": m, "mean_pct": cell.mean() * 100, "t": t, "p": p, "n": n})
+    return rows
+
+
 def regime_return_stats(forward_returns: pd.Series, regime: pd.Series) -> pd.DataFrame:
     """
     Mean next-day return, t-stat, and p-value by ensemble regime label.
