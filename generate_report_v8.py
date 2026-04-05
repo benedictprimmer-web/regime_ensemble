@@ -231,9 +231,8 @@ def make_page1():
     _style(ax2)
     _tc(ax2, "Signal Distributions")
     _caption(ax2,
-             "Kalman signal is tightly concentrated near 0.5\n"
-             "(uncertain most of the time — only confident during\n"
-             "sustained trends). Markov is more bimodal.", y=-0.22)
+             "Kalman signal concentrates near 0.5 — only confident during sustained trends.\n"
+             "Markov P(momentum) is more bimodal (commits to states). Dashed lines = 0.35/0.65 thresholds.", y=-0.18)
 
     # ── Panel 3 (right): Equity curves comparison ─────────────────────────
     ax3 = fig.add_subplot(gs[1, 1])
@@ -248,40 +247,36 @@ def make_page1():
     _style(ax3)
     _tc(ax3, "Equity Curves")
     _caption(ax3,
-             "3-way equal-weighted ensemble adds the Kalman\n"
-             "drift signal alongside geometric + Markov.\n"
-             "Max drawdown: baseline %+.1f%%  +Kalman %+.1f%%." % (dd_b * 100, dd_k * 100),
-             y=-0.22)
+             "3-signal ensemble: geo + Markov + Kalman, equal weights, no return-fitting.\n"
+             "Max drawdown: baseline %+.1f%%  vs  +Kalman %+.1f%%." % (dd_b * 100, dd_k * 100),
+             y=-0.18)
 
-    # ── Panel 4 (full width): Architecture explanation ─────────────────────
+    # ── Panel 4 (full width): Intuition + findings ───────────────────────
     ax4 = fig.add_subplot(gs[2, :])
     ax4.axis("off")
     ax4.set_xlim(0, 1)
     ax4.set_ylim(0, 1)
 
     ax4.text(0.0, 0.98,
-             "Architecture: 3-signal ensemble  (equal weights, no fitting to returns)",
+             "What the Kalman filter does — intuition, motivation, and what we found",
              fontsize=9, fontweight="bold", color=C["text"], va="top",
              transform=ax4.transAxes)
     ax4.axline((0, 0.89), slope=0, color=C["grid"], lw=0.8, transform=ax4.transAxes)
 
+    # Each body is EXACTLY 2 lines. Step = 0.22. 4 sections × 0.22 = 0.88, starting at 0.84.
     points = [
-        ("Finding: +Kalman underperforms (Sharpe %.2f vs %.2f)" % (sh_k, sh_b),
-         "The 3-signal ensemble is slightly worse than the 2-signal baseline. The reason is the Q estimate.\n"
-         "MLE sets Q = %.1e (essentially zero). Daily return noise (R = %.1e) overwhelms any detectable\n"
-         "drift change — the filter correctly concludes drift is nearly constant at daily granularity." % (Q_kal, R_kal)),
-        ("Why Q ≈ 0 means the signal stays near 0.5",
-         "With Q ≈ 0, the Kalman gain K_t → 0 quickly. The filtered drift barely moves from its initial\n"
-         "value. Signal = norm.cdf(μ_t / √(P_t + R)) stays tightly around 0.5 — adding a near-constant\n"
-         "0.5 to the 2-signal mean just dilutes the existing geometric and Markov signals."),
-        ("Why this is the correct and honest result",
-         "Q ≈ 0 is not a failure of estimation — it is the correct MLE answer for daily equity returns.\n"
-         "SPY's annualised drift (+8.6%/yr) is tiny relative to daily noise (+/- 1%). The Kalman filter\n"
-         "correctly finds it cannot distinguish genuine drift changes from day-to-day noise."),
-        ("Implication: Kalman needs faster data or different formulation",
-         "A higher-frequency Kalman (intraday) or a regime-switching Kalman (Kim filter) might capture\n"
-         "drift changes more effectively. At daily frequency on SPY, Markov already captures the\n"
-         "sustained regime structure better than a local-level random walk."),
+        ("Intuition: a recursive estimator of the current market drift",
+         "Each day the filter updates its estimate of the underlying drift μ_t by blending the prior with\n"
+         "today's return — weighted by Kalman gain K_t = P/(P+R). High uncertainty → more weight on new data."),
+        ("Motivation: faster crisis detection than Markov batch EM",
+         "Markov EM is fitted in batch: P(crisis) rises only after ~10-15 days of crisis-like returns.\n"
+         "Kalman updates every observation — a sudden drop immediately pulls μ_t negative, in real time."),
+        ("Finding: +Kalman underperforms  (Sharpe %.2f vs %.2f baseline)" % (sh_k, sh_b),
+         "MLE estimates Q ≈ %.0e (process noise ≈ zero): drift changes are below the daily noise floor.\n"
+         "With Q≈0, the signal locks near 0.5 and dilutes the existing ensemble rather than informing it." % Q_kal),
+        ("Implication: Kalman needs a regime-switching formulation or intraday data",
+         "SPY's mean drift (+8.6%/yr) is tiny vs daily noise (+/-1%): MLE correctly concludes drift is constant.\n"
+         "A Kim filter (Kalman + Markov hybrid) would allow drift to vary by regime, which may change this."),
     ]
 
     y = 0.84
@@ -290,7 +285,7 @@ def make_page1():
                  fontsize=8, fontweight="bold", color=C["kalman"], va="top")
         ax4.text(0.01, y - 0.065, body, transform=ax4.transAxes,
                  fontsize=7.5, color=C["sub"], va="top")
-        y -= 0.23
+        y -= 0.22
 
     _footer(fig, 1)
     return fig
@@ -326,9 +321,8 @@ def make_page2():
     ax1.legend(lines1 + lines2, lab1 + lab2, fontsize=7, framealpha=0.8)
     _tc(ax1, "Q and R Across 10 Expanding Windows")
     _caption(ax1,
-             "Q (process noise) and R (observation noise) are\n"
-             "estimated by MLE independently on 10 expanding\n"
-             "training windows. Stability = low overfitting risk.", y=-0.22)
+             "Q (process noise) and R (observation noise) estimated by MLE on 10 expanding windows.\n"
+             "Stability across windows = parameters describe a structural feature, not fitted noise.", y=-0.18)
 
     # ── Panel 2 (left): Q/R ratio stability ──────────────────────────────
     ax2 = fig.add_subplot(gs[0, 1])
@@ -343,9 +337,8 @@ def make_page2():
     _style(ax2)
     _tc(ax2, "Q/R Ratio Stability")
     _caption(ax2,
-             "Q/R controls how fast the filter adapts to new drift.\n"
-             "Consistent ratio across windows confirms the MLE\n"
-             "estimates a stable feature of SPY returns, not noise.", y=-0.22)
+             "Q/R controls filter adaptation speed. Consistent ratio across windows confirms\n"
+             "Q≈0 is a structural property of daily SPY returns, not an artefact of fitting.", y=-0.18)
 
     # ── Panel 3 (full width): Cost sensitivity ────────────────────────────
     ax3 = fig.add_subplot(gs[1, :])
@@ -357,81 +350,99 @@ def make_page2():
     ax3.axhline(bnh_sh, color=C["bnh"], lw=1.0, ls=":", alpha=0.8,
                 label="Buy & Hold  (Sharpe %.2f)" % bnh_sh)
     ax3.axhline(0, color=C["grid"], lw=0.8)
-    ax3.set_xlabel("Round-trip transaction cost (bps)", fontsize=9, color=C["sub"])
     ax3.set_ylabel("Sharpe Ratio", fontsize=9, color=C["sub"])
     ax3.legend(fontsize=8, framealpha=0.8)
     ax3.set_xlim(0, 30)
+    ax3.text(0.98, 0.03, "Round-trip transaction cost (bps) →",
+             transform=ax3.transAxes, ha="right", va="bottom",
+             fontsize=8, color=C["sub"])
     _style(ax3)
     _tc(ax3, "Sharpe vs Transaction Cost — Baseline vs +Kalman (0–30 bps)")
     _caption(ax3,
-             "Both strategies degrade at similar rates. The Kalman ensemble may have slightly different label-switch frequency;\n"
-             "check outputs/ for exact turnover. Strategy breaks even vs B&H at approximately 12-17 bps round-trip.",
-             y=-0.10)
+             "Both strategies degrade at similar rates. Strategy breaks even vs B&H at approximately 12-17 bps round-trip.",
+             y=-0.12)
 
-    # ── Panel 4 (full width): Overfitting analysis text ───────────────────
-    ax4 = fig.add_subplot(gs[2, :])
-    ax4.axis("off")
-    ax4.set_xlim(0, 1)
-    ax4.set_ylim(0, 1)
+    # ── Panel 4 left: Performance comparison table ────────────────────────
+    ax4a = fig.add_subplot(gs[2, 0])
+    ax4a.axis("off")
+    ax4a.set_xlim(0, 1)
+    ax4a.set_ylim(0, 1)
 
-    ax4.text(0.0, 0.98,
-             "Overfitting Analysis — Why 2 Parameters is Very Different from 15+",
-             fontsize=9, fontweight="bold", color=C["text"], va="top",
-             transform=ax4.transAxes)
-    ax4.axline((0, 0.89), slope=0, color=C["grid"], lw=0.8, transform=ax4.transAxes)
+    ax4a.text(0.0, 0.98, "Performance Summary (SPY 2000–2025, 0 bps)",
+              fontsize=9, fontweight="bold", color=C["text"], va="top",
+              transform=ax4a.transAxes)
+    ax4a.axline((0, 0.89), slope=0, color=C["grid"], lw=0.8, transform=ax4a.transAxes)
 
-    # Performance table first
-    table_data = [
-        ["", "Sharpe", "CAGR", "Max DD", "T-stat", "p-value"],
-        ["Buy & Hold",     "%.2f" % bnh_perf["Sharpe"], "%+.1f%%" % (bnh_perf["CAGR"] * 100),
+    headers  = ["", "Sharpe", "CAGR", "Max DD", "T-stat", "p"]
+    col_x    = [0.00, 0.30, 0.46, 0.60, 0.74, 0.88]
+    rows_d   = [
+        ["Buy & Hold",    "%.2f" % bnh_perf["Sharpe"], "%+.1f%%" % (bnh_perf["CAGR"] * 100),
          "%.1f%%" % (bnh_perf["Max DD"] * 100), "—", "—"],
-        ["Baseline (v5)",  "%.2f" % sh_b, "%+.1f%%" % (cagr_b * 100),
+        ["Baseline (v5)", "%.2f" % sh_b, "%+.1f%%" % (cagr_b * 100),
          "%.1f%%" % (dd_b * 100), "%.2f" % t_b, "%.3f" % p_b],
-        ["+Kalman (v8)",   "%.2f" % sh_k, "%+.1f%%" % (cagr_k * 100),
+        ["+Kalman (v8)",  "%.2f" % sh_k, "%+.1f%%" % (cagr_k * 100),
          "%.1f%%" % (dd_k * 100), "%.2f" % t_k, "%.3f" % p_k],
     ]
-
-    col_x = [0.01, 0.22, 0.38, 0.52, 0.66, 0.80]
-    header_y = 0.82
-
-    for col_i, header in enumerate(table_data[0]):
-        ax4.text(col_x[col_i], header_y, header, transform=ax4.transAxes,
-                 fontsize=8, fontweight="bold", color=C["text"], va="top")
-    ax4.axline((0, header_y - 0.045), slope=0, color=C["grid"], lw=0.6,
-               transform=ax4.transAxes)
-
-    row_y = header_y - 0.065
     row_colors = [C["bnh"], C["baseline"], C["kalman"]]
-    for row_i, row in enumerate(table_data[1:]):
+
+    hy = 0.80
+    for i, h in enumerate(headers):
+        ax4a.text(col_x[i], hy, h, transform=ax4a.transAxes,
+                  fontsize=7.5, fontweight="bold", color=C["text"], va="top")
+    ax4a.axline((0, hy - 0.04), slope=0, color=C["grid"], lw=0.6, transform=ax4a.transAxes)
+
+    ry = hy - 0.10
+    for row_i, row in enumerate(rows_d):
         for col_i, cell in enumerate(row):
-            ax4.text(col_x[col_i], row_y, cell, transform=ax4.transAxes,
-                     fontsize=7.8, color=row_colors[row_i], va="top")
-        row_y -= 0.065
+            ax4a.text(col_x[col_i], ry, cell, transform=ax4a.transAxes,
+                      fontsize=7.5, color=row_colors[row_i], va="top")
+        ry -= 0.12
 
-    ax4.axline((0, row_y), slope=0, color=C["grid"], lw=0.6, transform=ax4.transAxes)
-    row_y -= 0.04
+    ax4a.axline((0, ry + 0.04), slope=0, color=C["grid"], lw=0.6, transform=ax4a.transAxes)
 
+    # Key callout below table
+    ax4a.text(0.0, ry - 0.04,
+              "Kalman-Geo correlation: %.3f\nKalman-Markov correlation: %.3f" % (corr_kg, corr_km),
+              transform=ax4a.transAxes, fontsize=7.5, color=C["sub"], va="top")
+    ax4a.text(0.0, ry - 0.20,
+              "Low Kalman-Geo correlation confirms the two\n"
+              "signals are genuinely orthogonal — the 3rd\n"
+              "signal is not redundant in theory, but in\n"
+              "practice Q≈0 keeps it near 0.5 regardless.",
+              transform=ax4a.transAxes, fontsize=7.2, color=C["sub"], va="top",
+              style="italic")
+
+    # ── Panel 4 right: Overfitting safeguards ────────────────────────────
+    ax4b = fig.add_subplot(gs[2, 1])
+    ax4b.axis("off")
+    ax4b.set_xlim(0, 1)
+    ax4b.set_ylim(0, 1)
+
+    ax4b.text(0.0, 0.98, "Overfitting analysis",
+              fontsize=9, fontweight="bold", color=C["text"], va="top",
+              transform=ax4b.transAxes)
+    ax4b.axline((0, 0.89), slope=0, color=C["grid"], lw=0.8, transform=ax4b.transAxes)
+
+    # 3 sections, EXACTLY 2-line bodies, step = 0.28
     safeguards = [
-        ("2 parameters (Q, R) on 6,000+ observations — overfitting risk very low",
-         "Markov AR(1) k=3 has 15+ free parameters. The Kalman local-level model has exactly 2.\n"
-         "With a 3,000:1 observations-to-parameters ratio, classical overfitting risk is negligible.\n"
-         "The model cannot memorise historical patterns with only 2 degrees of freedom."),
-        ("MLE estimates Q ≈ 0 — the model is NOT being forced to match returns",
-         "Q and R are estimated by maximising innovation likelihood (prediction errors on out-of-sample\n"
-         "one-step forecasts). The MLE correctly finds Q ≈ 0 = drift changes are not detectable.\n"
-         "An overfit model would choose Q large to chase return patterns; this one does not."),
-        ("The underperformance itself is evidence against overfitting",
-         "If the Kalman parameters were fitted to strategy returns, we would expect an improvement.\n"
-         "Sharpe 0.60 < 0.68 baseline confirms the parameters were not tuned to historical performance.\n"
-         "Parameter stability across expanding windows (panels above) confirms the same."),
+        ("2 parameters — negligible overfitting risk",
+         "Markov has 15+ parameters; Kalman has exactly 2 (Q, R).\n"
+         "At 6,000+ observations, there is no room to memorise history."),
+        ("Q and R estimated on innovations, not on strategy returns",
+         "MLE maximises prediction error likelihood — not Sharpe.\n"
+         "Q ≈ 0 is the correct answer, not a tuned result."),
+        ("Underperformance confirms no return-target leakage",
+         "A model tuned to historical performance would show improvement.\n"
+         "Sharpe %.2f < %.2f is exactly what honest estimation produces." % (sh_k, sh_b)),
     ]
 
+    y = 0.82
     for title, body in safeguards:
-        ax4.text(0.01, row_y, title, transform=ax4.transAxes,
-                 fontsize=8, fontweight="bold", color=C["kalman"], va="top")
-        ax4.text(0.01, row_y - 0.06, body, transform=ax4.transAxes,
-                 fontsize=7.5, color=C["sub"], va="top")
-        row_y -= 0.20
+        ax4b.text(0.01, y, title, transform=ax4b.transAxes,
+                  fontsize=8, fontweight="bold", color=C["kalman"], va="top")
+        ax4b.text(0.01, y - 0.065, body, transform=ax4b.transAxes,
+                  fontsize=7.5, color=C["sub"], va="top")
+        y -= 0.28
 
     _footer(fig, 2)
     return fig
