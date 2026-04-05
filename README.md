@@ -177,7 +177,12 @@ regime_ensemble/
 
 ## Changelog
 
-### v6.0 (latest)
+### v7.0 (latest)
+- **Directional geometric** (`--geo-directional`) — signed straightness ratio in [−1, +1]: straight-up scores +1, straight-down scores −1. Fixes the direction-blindness where crashes were labelled momentum. Result: Sharpe 0.32 vs 0.68 baseline — the Markov crisis override already handles downtrends; directional geometry creates a correlated second crash detector that reduces ensemble diversity without adding new information. Available as a research flag.
+- **Continuous position sizing** (`--continuous`) — position = ensemble score [0, 1] directly, bypassing discrete {0, 0.5, 1} labels. Intended to reduce label switches and transaction costs. Result: Sharpe 0.56 vs 0.68 — the empirically calibrated discrete half-position on mixed days (T=3.21, p=0.001) outperforms the raw score; high-conviction days are underweighted at score 0.7 vs full position 1.0. Available as a research flag.
+- See the [v7 Research Report (PDF)](docs/SPY_v7_research_report.pdf) for charts and full analysis.
+
+### v6.0
 - **Vol ratio dampening** (`--vol-signal`) — 5-day / 63-day realised vol ratio suppresses the Markov momentum signal when short-term vol exceeds 2x the baseline. Active on ~11% of trading days. Endogenous (no API required), orthogonal to existing signals.
 - **Multi-scale geometric** (`--multi-scale`) — averages the straightness ratio across 5, 15, and 30-day windows before thresholding. More robust across volatility regimes; reduces single-window noise.
 - **Expanding-window honest backtest** (`--expanding`) — refits geometric thresholds and Markov model annually on all data up to that date. Optimism bias vs in-sample = 0.03 Sharpe points (small gap).

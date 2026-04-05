@@ -267,34 +267,26 @@ def make_page1():
 
     findings = [
         ("Markov crisis override already covers the crash case",
-         "When P(crisis) > 0.50, the ensemble suppresses the buy signal regardless of geometric. "
-         "This override responds to accumulated evidence of high-vol, negative-mean behaviour -- "
-         "not the path shape. It catches sustained downtrends within 1-2 weeks of onset."),
+         "When P(crisis) > 0.50, the buy signal is suppressed regardless of geometric.\n"
+         "It catches sustained downtrends in 1-2 weeks using full return distribution (mean + vol), not path shape."),
         ("Directional geometry introduces false negatives",
-         "Early in a sharp selloff, the signed ratio goes negative and signals CASH. "
-         "But many sharp selloffs are followed immediately by sharp recoveries (e.g. flash crashes, "
-         "brief panic days). Staying in cash during the recovery costs return. The unsigned ratio "
-         "would have labelled those the same either way, deferring to Markov."),
-        ("The two signals are not orthogonal on the downside",
-         "The design value of the ensemble is combining two INDEPENDENT detectors. "
-         "On the upside, geometric path shape and Markov momentum probability are genuinely "
-         "orthogonal. On the downside, making geometric directional creates a second crisis detector -- "
-         "correlated with Markov -- which reduces diversification and adds noise without new information."),
+         "Sharp selloffs are often followed by immediate recoveries (flash crashes, panic days).\n"
+         "Signed ratio signals CASH through both fall and bounce; unsigned defers to Markov on those days."),
+        ("The two signals are less orthogonal on the downside",
+         "Geometric + Markov are independent on the upside (path shape vs statistical state).\n"
+         "Directional geometric creates a second crash detector correlated with Markov, reducing ensemble diversity."),
         ("Recommendation: keep as research flag, not default",
-         "--geo-directional is worth revisiting on higher-frequency data or combined with other signals. "
-         "On SPY daily returns, the existing Markov crisis override is more precise because it uses "
-         "the full return distribution (mean + vol), not just path shape."),
+         "Worth revisiting on higher-frequency data or combined with other signals.\n"
+         "On SPY daily, Markov crisis override is more precise and adds no extra correlation cost."),
     ]
 
     y = 0.84
     for title, body in findings:
         ax4.text(0.01, y, title, transform=ax4.transAxes,
                  fontsize=8, fontweight="bold", color=C["directional"], va="top")
-        # Wrap body text manually for narrow column
-        ax4.text(0.01, y - 0.065, body, transform=ax4.transAxes,
-                 fontsize=7.5, color=C["sub"], va="top", wrap=True,
-                 bbox=dict(boxstyle="round,pad=0.0", fc="none", ec="none"))
-        y -= 0.21
+        ax4.text(0.01, y - 0.068, body, transform=ax4.transAxes,
+                 fontsize=7.5, color=C["sub"], va="top")
+        y -= 0.23
 
     _footer(fig, 1)
     return fig
@@ -386,34 +378,28 @@ def make_page2():
 
     findings = [
         ("The discrete half-position on mixed days was empirically calibrated",
-         "Mixed regime has T=3.21, p=0.001 — the strongest next-day forward signal. "
-         "The +0.5 position on mixed days was deliberately set to match this evidence, not "
-         "derived from the raw score. In continuous mode, mixed days map to score ~0.5 "
-         "which happens to give the same position -- but this coincidence does not hold for "
-         "the full score distribution."),
+         "Mixed regime: T=3.21, p=0.001 -- the strongest forward signal. The +0.5 position was\n"
+         "set to match that evidence, not derived from the score. Continuous mode matches it by\n"
+         "coincidence on mixed days but not across the full distribution."),
         ("Continuous mode undersizes the best days",
-         "On high-conviction momentum days (score = 0.72), continuous mode holds 0.72 of the "
-         "portfolio rather than the discrete full position of 1.0. These are exactly the days "
-         "with the strongest expected returns (both detectors agree). Undersizing here costs "
-         "return without a compensating risk reduction."),
-        ("Continuous changes incur daily transaction costs",
-         "The score shifts slightly every day. Each small change costs bps * |delta_position|. "
-         "This eliminates the switches/year advantage: instead of ~61 discrete switches, you "
-         "have ~252 micro-adjustments per year. The total turnover is similar."),
-        ("Recommendation: apply a score-smoothing step before using as position",
-         "A 3-5 day exponential moving average of the score before converting to position "
-         "would reduce daily noise while preserving the continuous signal idea. "
-         "Alternatively, clip: position = 0 if score < 0.35, score if 0.35-0.65, "
-         "1.0 if score > 0.65 -- this preserves full allocation on conviction days."),
+         "On high-conviction days (score ~0.72), continuous holds 0.72 vs discrete 1.0.\n"
+         "These are the strongest expected-return days (both detectors agree).\n"
+         "Undersizing here costs return without a compensating reduction in risk."),
+        ("Daily micro-adjustments still incur transaction costs",
+         "The score shifts slightly each day: bps * |delta| applies to every change.\n"
+         "Total turnover is similar to ~61 discrete switches -- no cost advantage."),
+        ("Recommendation: smooth the score before using as position",
+         "Apply a 3-5 day EMA of the score, or clip: pos=0 below 0.35, pos=score\n"
+         "between 0.35-0.65, pos=1.0 above 0.65. Preserves full allocation on conviction days."),
     ]
 
     y = 0.84
     for title, body in findings:
         ax4.text(0.01, y, title, transform=ax4.transAxes,
                  fontsize=8, fontweight="bold", color=C["continuous"], va="top")
-        ax4.text(0.01, y - 0.065, body, transform=ax4.transAxes,
+        ax4.text(0.01, y - 0.068, body, transform=ax4.transAxes,
                  fontsize=7.5, color=C["sub"], va="top")
-        y -= 0.21
+        y -= 0.25
 
     _footer(fig, 2)
     return fig
