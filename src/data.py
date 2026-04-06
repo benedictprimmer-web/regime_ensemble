@@ -105,6 +105,16 @@ def vix_levels(df: pd.DataFrame) -> pd.Series:
     return df["close"].rename("vix")
 
 
+def vvix_levels(df: pd.DataFrame) -> pd.Series:
+    """
+    VVIX daily close levels from a bars DataFrame.
+
+    VVIX is the volatility-of-volatility index (for VIX options). Like VIX,
+    this is a level series and should not be treated as a return instrument.
+    """
+    return df["close"].rename("vvix")
+
+
 def fetch_vix_yfinance(from_date: str, to_date: str) -> pd.Series:
     """
     Fetch VIX daily close levels from Yahoo Finance (^VIX) via yfinance.
@@ -126,6 +136,31 @@ def fetch_vix_yfinance(from_date: str, to_date: str) -> pd.Series:
     raw = yf.download("^VIX", start=from_date, end=to_date, progress=False)["Close"]
     raw.index.name = "Date"
     raw.name = "vix"
+    raw = raw.dropna()
+    raw.to_csv(cache_path)
+    return raw
+
+
+def fetch_vvix_yfinance(from_date: str, to_date: str) -> pd.Series:
+    """
+    Fetch VVIX daily close levels from Yahoo Finance (^VVIX) via yfinance.
+
+    Useful when Polygon index access does not include I:VVIX. Results are
+    cached to data/cache/ similarly to other index fetch helpers.
+
+    Returns:
+        pd.Series of VVIX close levels named "vvix", indexed by date.
+    """
+    cache_path = CACHE_DIR / f"VVIX_yf_{from_date}_{to_date}.csv"
+    if cache_path.exists():
+        s = pd.read_csv(cache_path, index_col="Date", parse_dates=True).squeeze()
+        s.name = "vvix"
+        return s
+
+    import yfinance as yf
+    raw = yf.download("^VVIX", start=from_date, end=to_date, progress=False)["Close"]
+    raw.index.name = "Date"
+    raw.name = "vvix"
     raw = raw.dropna()
     raw.to_csv(cache_path)
     return raw
