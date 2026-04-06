@@ -10,6 +10,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from io import StringIO
+from urllib.request import urlopen
 from polygon import RESTClient
 from dotenv import load_dotenv
 
@@ -115,6 +117,55 @@ def vvix_levels(df: pd.DataFrame) -> pd.Series:
     return df["close"].rename("vvix")
 
 
+def _read_cached_series(cache_path: Path, name: str) -> Optional[pd.Series]:
+    """Read a cached Date-indexed CSV as a numeric series; return None if empty/invalid."""
+    if not cache_path.exists():
+        return None
+    try:
+        s = pd.read_csv(cache_path, index_col="Date", parse_dates=True).squeeze()
+        if isinstance(s, pd.DataFrame):
+            if s.shape[1] == 0:
+                return None
+            s = s.iloc[:, 0]
+        s = pd.to_numeric(s, errors="coerce").dropna()
+        if len(s) == 0:
+            return None
+        s.name = name
+        return s
+    except Exception:
+        return None
+
+
+def _extract_yf_close(raw) -> pd.Series:
+    """
+    Extract close series from yfinance output robustly across column layouts.
+    Handles both flat and MultiIndex columns.
+    """
+    close = raw["Close"]
+    if isinstance(close, pd.DataFrame):
+        if close.shape[1] == 0:
+            return pd.Series(dtype=float)
+        close = close.iloc[:, 0]
+    return pd.to_numeric(close, errors="coerce").dropna()
+
+
+def _fetch_cboe_series(index_name: str, from_date: str, to_date: str, value_col: str) -> pd.Series:
+    """
+    Fetch daily index history from CBOE CSV endpoints.
+    index_name examples: VIX, VVIX
+    value_col examples: CLOSE, VVIX
+    """
+    url = f"https://cdn.cboe.com/api/global/us_indices/daily_prices/{index_name}_History.csv"
+    with urlopen(url, timeout=20) as resp:
+        txt = resp.read().decode("utf-8")
+    df = pd.read_csv(StringIO(txt))
+    df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce")
+    s = pd.to_numeric(df[value_col], errors="coerce")
+    out = pd.Series(s.values, index=df["DATE"], name=index_name.lower()).dropna()
+    out = out[(out.index >= pd.to_datetime(from_date)) & (out.index <= pd.to_datetime(to_date))]
+    return out.sort_index()
+
+
 def fetch_vix_yfinance(from_date: str, to_date: str) -> pd.Series:
     """
     Fetch VIX daily close levels from Yahoo Finance (^VIX) via yfinance.
@@ -127,18 +178,20 @@ def fetch_vix_yfinance(from_date: str, to_date: str) -> pd.Series:
         pd.Series of VIX close levels named "vix", indexed by date.
     """
     cache_path = CACHE_DIR / f"VIX_yf_{from_date}_{to_date}.csv"
-    if cache_path.exists():
-        s = pd.read_csv(cache_path, index_col="Date", parse_dates=True).squeeze()
-        s.name = "vix"
-        return s
+    cached = _read_cached_series(cache_path, "vix")
+    if cached is not None:
+        return cached
 
     import yfinance as yf
-    raw = yf.download("^VIX", start=from_date, end=to_date, progress=False)["Close"]
-    raw.index.name = "Date"
-    raw.name = "vix"
-    raw = raw.dropna()
-    raw.to_csv(cache_path)
-    return raw
+    raw = yf.download("^VIX", start=from_date, end=to_date, progress=False)
+    vix = _extract_yf_close(raw)
+    if len(vix) == 0:
+        # Fallback: official CBOE history.
+        vix = _fetch_cboe_series("VIX", from_date, to_date, value_col="CLOSE")
+    vix.index.name = "Date"
+    vix.name = "vix"
+    vix.to_csv(cache_path)
+    return vix
 
 
 def fetch_vvix_yfinance(from_date: str, to_date: str) -> pd.Series:
@@ -152,15 +205,17 @@ def fetch_vvix_yfinance(from_date: str, to_date: str) -> pd.Series:
         pd.Series of VVIX close levels named "vvix", indexed by date.
     """
     cache_path = CACHE_DIR / f"VVIX_yf_{from_date}_{to_date}.csv"
-    if cache_path.exists():
-        s = pd.read_csv(cache_path, index_col="Date", parse_dates=True).squeeze()
-        s.name = "vvix"
-        return s
+    cached = _read_cached_series(cache_path, "vvix")
+    if cached is not None:
+        return cached
 
     import yfinance as yf
-    raw = yf.download("^VVIX", start=from_date, end=to_date, progress=False)["Close"]
-    raw.index.name = "Date"
-    raw.name = "vvix"
-    raw = raw.dropna()
-    raw.to_csv(cache_path)
-    return raw
+    raw = yf.download("^VVIX", start=from_date, end=to_date, progress=False)
+    vvix = _extract_yf_close(raw)
+    if len(vvix) == 0:
+        # Fallback: official CBOE history.
+        vvix = _fetch_cboe_series("VVIX", from_date, to_date, value_col="VVIX")
+    vvix.index.name = "Date"
+    vvix.name = "vvix"
+    vvix.to_csv(cache_path)
+    return vvix

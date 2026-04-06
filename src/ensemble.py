@@ -101,23 +101,25 @@ def gamma_stress_proxy(
     Higher values imply higher stress where trend-following exposure should be
     dampened.
     """
+    returns = pd.to_numeric(returns, errors="coerce")
     spot_sigma = returns.rolling(20, min_periods=10).std().replace(0, np.nan)
     spot_down = (-returns / spot_sigma).clip(lower=0.0)
     spot_norm = (spot_down / 3.0).clip(0.0, 1.0)
 
-    vix_aligned = vix.reindex(returns.index, method="ffill")
-    vix_jump = vix_aligned.pct_change().clip(lower=0.0)
+    vix_aligned = pd.to_numeric(vix.reindex(returns.index, method="ffill"), errors="coerce")
+    vix_jump = vix_aligned.pct_change(fill_method=None).clip(lower=0.0)
     vix_norm = (vix_jump / 0.08).clip(0.0, 1.0)
 
     if vvix is not None:
-        vvix_aligned = vvix.reindex(returns.index, method="ffill")
-        vvix_jump = vvix_aligned.pct_change().clip(lower=0.0)
+        vvix_aligned = pd.to_numeric(vvix.reindex(returns.index, method="ffill"), errors="coerce")
+        vvix_jump = vvix_aligned.pct_change(fill_method=None).clip(lower=0.0)
         vvix_norm = (vvix_jump / 0.10).clip(0.0, 1.0)
         raw = 0.50 * spot_norm + 0.30 * vix_norm + 0.20 * vvix_norm
     else:
         raw = 0.60 * spot_norm + 0.40 * vix_norm
 
-    return raw.rolling(3, min_periods=1).mean().clip(0.0, 1.0).rename("gamma_proxy")
+    out = raw.rolling(3, min_periods=1).mean().clip(0.0, 1.0)
+    return pd.Series(out, index=returns.index, name="gamma_proxy")
 
 
 def _build_markov_component(
