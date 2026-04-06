@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
-from src.data        import fetch_daily_bars, log_returns, fetch_multi, vix_levels
+from src.data        import fetch_daily_bars, log_returns, fetch_multi, vix_levels, fetch_vix_yfinance
 from src.geometric   import geometric_signal, straightness_ratio, MULTI_WINDOWS
 from src.markov      import fit_markov3, select_k
 from src.ensemble    import ensemble_score, regime_labels, vol_ratio
@@ -546,6 +546,7 @@ def main() -> None:
     parser.add_argument("--to",      dest="to_date",       default="2025-01-01", metavar="YYYY-MM-DD")
     parser.add_argument("--fetch-vix",   action="store_true", help="Fetch VIX (I:VIX) from Polygon alongside primary ticker")
     parser.add_argument("--vix-signal",  action="store_true", help="Use VIX as dampening factor in ensemble (requires cached VIX data)")
+    parser.add_argument("--vix-feature", action="store_true", help="Include VIX level as 6th feature in the Markov observation vector")
     parser.add_argument("--short",       action="store_true", help="Allow short on reversion days")
     parser.add_argument("--min-hold",    dest="min_hold", type=int, default=1, metavar="N",
                         help="Persistence filter: require N consecutive days in regime before switching (default: 1 = off)")
@@ -576,11 +577,16 @@ def main() -> None:
     print(f"  {len(df)} trading days loaded")
 
     vix = None
-    if args.fetch_vix or args.vix_signal:
-        print(f"  Fetching VIX (I:VIX)  {args.from_date} → {args.to_date}")
-        vix_df = fetch_daily_bars("I:VIX", args.from_date, args.to_date)
-        vix    = vix_levels(vix_df)
-        print(f"  VIX: {len(vix_df)} days loaded  (range: {vix.min():.1f} – {vix.max():.1f})")
+    if args.fetch_vix or args.vix_signal or args.vix_feature:
+        print(f"  Fetching VIX  {args.from_date} → {args.to_date}")
+        try:
+            vix_df = fetch_daily_bars("I:VIX", args.from_date, args.to_date)
+            vix    = vix_levels(vix_df)
+            print(f"  VIX: {len(vix_df)} days from Polygon  (range: {vix.min():.1f} – {vix.max():.1f})")
+        except Exception as _poly_err:
+            print(f"  Polygon I:VIX unavailable ({_poly_err.__class__.__name__}) — falling back to yfinance ^VIX")
+            vix = fetch_vix_yfinance(args.from_date, args.to_date)
+            print(f"  VIX: {len(vix)} days from yfinance  (range: {vix.min():.1f} – {vix.max():.1f})")
 
     # ── 2. BIC Model Selection ─────────────────────────────────────────
     if not args.skip_bic:
@@ -611,9 +617,11 @@ def main() -> None:
         print(f"  {name:<12s}  {n:4d} days  ({n / len(geo) * 100:.1f}%)")
 
     # ── 4. Markov k=3 Signal ───────────────────────────────────────────
-    _section("4. GAUSSIAN HMM k=3  (5-feature state vector, filtered probabilities)")
+    vix_feature = vix if args.vix_feature else None
+    n_markov_feats = 6 if vix_feature is not None else 5
+    _section(f"4. GAUSSIAN HMM k=3  ({n_markov_feats}-feature state vector, filtered probabilities)")
     print("  Fitting  (5 random restarts × 200 EM iterations)...")
-    mom_prob, crisis_prob, _, trans_info = fit_markov3(ret)
+    mom_prob, crisis_prob, _, trans_info = fit_markov3(ret, vix=vix_feature)
 
     # ── 5. Ensemble ────────────────────────────────────────────────────
     vix_signal = vix if args.vix_signal else None
@@ -773,7 +781,8 @@ def main() -> None:
         print("  Markov: fitted on train, forward-filtered on test (no EM on test data).\n")
         wf_df, oos_returns = walk_forward(ret, n_folds=10, test_size=63,
                                           geo_directional=args.geo_directional,
-                                          use_kalman=args.kalman)
+                                          use_kalman=args.kalman,
+                                          vix=vix_feature)
         print(wf_df.to_string())
         pos_folds = (wf_df.loc[(slice(None), "momentum"), "Dir"] == "✓").sum()
         total     = len(wf_df.loc[(slice(None), "momentum")])
@@ -792,7 +801,8 @@ def main() -> None:
         print("  Markov: em_iter=200 per refit. First live period after 2 years of data.\n")
         exp_bt = expanding_backtest(ret, multi_scale=multi_scale_flag,
                                     geo_directional=args.geo_directional,
-                                    use_kalman=args.kalman, verbose=True)
+                                    use_kalman=args.kalman, verbose=True,
+                                    vix=vix_feature)
 
         from src.backtest import compute_stats as _cs
         exp_perf = _cs(exp_bt)

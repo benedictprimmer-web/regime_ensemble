@@ -103,3 +103,29 @@ def vix_levels(df: pd.DataFrame) -> pd.Series:
     when working with I:VIX data.
     """
     return df["close"].rename("vix")
+
+
+def fetch_vix_yfinance(from_date: str, to_date: str) -> pd.Series:
+    """
+    Fetch VIX daily close levels from Yahoo Finance (^VIX) via yfinance.
+
+    Use this when the Polygon plan does not include I:VIX. yfinance provides
+    ^VIX back to 1990 at no cost. Results are cached to the same data/cache/
+    directory as Polygon data.
+
+    Returns:
+        pd.Series of VIX close levels named "vix", indexed by date.
+    """
+    cache_path = CACHE_DIR / f"VIX_yf_{from_date}_{to_date}.csv"
+    if cache_path.exists():
+        s = pd.read_csv(cache_path, index_col="Date", parse_dates=True).squeeze()
+        s.name = "vix"
+        return s
+
+    import yfinance as yf
+    raw = yf.download("^VIX", start=from_date, end=to_date, progress=False)["Close"]
+    raw.index.name = "Date"
+    raw.name = "vix"
+    raw = raw.dropna()
+    raw.to_csv(cache_path)
+    return raw
