@@ -42,6 +42,7 @@ def expanding_backtest(
     geo_directional: bool = False,
     use_kalman: bool    = False,  # include Kalman drift signal as 3rd component
     verbose: bool       = True,
+    vix: pd.Series      = None,   # optional VIX series for 6-feature Markov
 ) -> pd.DataFrame:
     """
     Run an expanding-window backtest: refit model annually, trade the next year.
@@ -101,7 +102,7 @@ def expanding_backtest(
 
         # -- Markov: fit on train, forward-filter test -----------------------
         try:
-            mom_prob_test, crisis_prob_test = fit_and_filter_markov(train_ret, test_ret)
+            mom_prob_test, crisis_prob_test = fit_and_filter_markov(train_ret, test_ret, vix=vix)
         except Exception as e:
             if verbose:
                 print("    Markov fit failed: %s -- using geometric only" % e)

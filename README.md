@@ -99,6 +99,8 @@ Start with the overview. The technical and research reports build on it.
 | [v6 Technical (3 pages)](docs/SPY_v6_report.pdf) | `generate_report_v6.py` | Vol-ratio dampening, multi-scale geometric, expanding-window OOS |
 | [v7 Research (2 pages)](docs/SPY_v7_research_report.pdf) | `generate_report_v7.py` | Directional geometric and continuous sizing — both underperform, with analysis of why |
 | [v8 Research (2 pages)](docs/SPY_v8_report.pdf) | `generate_report_v8.py` | Kalman drift filter — Q≈0 finding, why daily Kalman underperforms |
+| [v9 Volatility Research (3 pages)](docs/SPY_v9_vol_report copy.pdf) | `generate_report_v9.py` | VIX/VVIX/gamma-proxy extensions and ablations; current active research direction |
+| [Paul Refinements v2](docs/Paul_refinement_pdf_V2.pdf) | `generate_report_paul_refinements_v2.py` | Cleaned presentation + diagnostics for communicating model behavior and decisions |
 | [v4/v5 Changes](docs/v4v5_changes_report.pdf) | `generate_report_v4v5.py` | Half-position mixed regime, persistence filter, walk-forward OOS |
 
 ---
@@ -147,6 +149,13 @@ python3 run.py --vol-signal --multi-scale --skip-bic   # vol dampening + multi-s
 ```
 
 ```bash
+# Volatility expansion (VVIX + gamma-stress proxy; proxy != true options-chain GEX)
+python3 run.py --vvix-signal --skip-bic                              # add VVIX dampening
+python3 run.py --gex-proxy-signal --skip-bic                         # add gamma-stress proxy dampening
+python3 run.py --vvix-signal --gex-proxy-signal --ablation --skip-bic  # baseline vs vvix/proxy variants
+```
+
+```bash
 # Research flags (v7 and v8 — both underperform the v5 baseline)
 python3 run.py --geo-directional --skip-bic   # signed straightness ratio (v7)
 python3 run.py --continuous      --skip-bic   # continuous position sizing (v7)
@@ -168,12 +177,23 @@ These are not afterthoughts — they are the primary reasons results should not 
 3. **In-sample threshold calibration** — percentile thresholds and ensemble cutoffs were tuned on the full dataset. Real-time use requires expanding-window recalibration (see `--expanding`).
 4. **Reversion signal is not significant** — reversion p=0.73 over 25 years. The `--short` flag exists for research only.
 5. **Calibrated on SPY** — thresholds and Markov parameters are fitted on SPY. The `--multi-asset` flag applies the same model to QQQ, IWM, TLT, GLD as a validation check, but each asset's regime structure differs.
+6. **Gamma proxy is not true dealer GEX** — `--gex-proxy-signal` uses a causal spot/vol shock proxy (returns + VIX + optional VVIX), not full options-chain open-interest based gamma exposure.
 
 ---
 
 ## Versioning
 
 The core strategy is **v5**. Versions 6, 7, and 8 are research iterations that extend v5 — v6 adds useful enhancements, v7 and v8 are honest investigations that underperform.
+
+### Current focus
+- We are now prioritizing the **volatility extension track** (v9 branch work): VIX/VVIX conditioning plus gamma-stress proxy dampening.
+- v7 and v8 remain valuable negative results and should be kept as documented research trials.
+- Paul refinement reports are treated as communication/analysis improvements around the same project, not a separate strategy fork.
+
+### v9.0 (in progress)
+- **VVIX dampening** (`--vvix-signal`) — adds a vol-of-vol stress suppressor on the Markov momentum component.
+- **Gamma-stress proxy dampening** (`--gex-proxy-signal`) — adds a causal proxy built from downside spot shock + VIX jump (+ optional VVIX jump). This is a proxy and intentionally not labeled as true dealer GEX.
+- **Extended ablation** (`--ablation` with `--vvix-signal` and/or `--gex-proxy-signal`) — compares baseline vs dampener variants to isolate incremental value.
 
 ### v8.0
 - **Kalman drift filter** (`--kalman`) — local-level Kalman model estimated by MLE on innovation likelihood. Only 2 parameters (Q, R). Signal = norm.cdf(μ_t / √(P_t + R)) added as a 3rd ensemble component.

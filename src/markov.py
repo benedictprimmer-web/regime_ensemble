@@ -3,12 +3,13 @@ Multivariate Hidden Markov Model regime detection.
 
 Model: GaussianHMM(n_components=3, covariance_type='diag')
 
-Observation vector (5 features, z-scored on train data):
+Observation vector (5–6 features, z-scored on train data):
     ret_20d   -- 20-day cumulative log return       (medium-term direction)
     ret_5d    -- 5-day cumulative log return         (short-term direction)
     rvol_20d  -- 20-day realised vol (annualised)    (stress / volatility level)
     drawdown  -- distance from 252-day high          (loss from recent peak)
     dist_200d -- price / 200-day MA - 1             (structural trend position)
+    vix_level -- VIX index level (optional, forward-looking implied vol)
 
 Why this beats AR(1) on daily returns:
     AR(1) asks "are daily returns autocorrelated one step ahead?" — for SPY,
@@ -53,23 +54,32 @@ from hmmlearn.hmm import GaussianHMM
 N_STATES      = 3
 N_ITER        = 200   # EM iterations per random start
 N_RESTARTS    = 5     # independent random starts; best log-likelihood is kept
-FEATURE_NAMES = ["ret_20d", "ret_5d", "rvol_20d", "drawdown", "dist_200d"]
+FEATURE_NAMES      = ["ret_20d", "ret_5d", "rvol_20d", "drawdown", "dist_200d"]
+FEATURE_NAMES_VIX  = ["ret_20d", "ret_5d", "rvol_20d", "drawdown", "dist_200d", "vix_level"]
 
 
 # ── Feature construction ──────────────────────────────────────────────────────
 
-def _build_features(returns: pd.Series, warmup: pd.Series = None) -> pd.DataFrame:
+def _build_features(
+    returns: pd.Series,
+    warmup: pd.Series = None,
+    vix: pd.Series = None,
+) -> pd.DataFrame:
     """
-    Build the 5-feature observation matrix from a daily log-return series.
+    Build the 5- or 6-feature observation matrix from a daily log-return series.
 
     Args:
         returns : daily log returns (the period you want features for)
         warmup  : optional history to prepend for rolling-window initialisation.
                   Typically the last 250 days of the training slice. The output
                   is sliced back to `returns.index` before returning.
+        vix     : optional VIX level series (forward-looking implied vol).
+                  When provided, adds a 6th feature `vix_level` to the output.
+                  Reindexed to the feature index using forward-fill.
 
     Returns:
-        DataFrame with columns matching FEATURE_NAMES, indexed by returns.index.
+        DataFrame with columns matching FEATURE_NAMES (or FEATURE_NAMES_VIX if
+        vix is supplied), indexed by returns.index.
         Rows where any feature is NaN are kept — callers must dropna() before
         passing to the HMM (and reindex back afterwards).
     """
@@ -89,6 +99,9 @@ def _build_features(returns: pd.Series, warmup: pd.Series = None) -> pd.DataFram
         "drawdown": price / price.rolling(252, min_periods=63).max() - 1,
         "dist_200d": price / price.rolling(200, min_periods=50).mean() - 1,
     }, index=combined.index)
+
+    if vix is not None:
+        feats["vix_level"] = vix.reindex(feats.index, method="ffill")
 
     if warmup is not None:
         return feats.loc[returns.index]
@@ -276,7 +289,11 @@ def select_k(returns: pd.Series, k_range: range = range(2, 5)) -> pd.DataFrame:
     return pd.DataFrame(rows).set_index("k")
 
 
-def fit_markov3(returns: pd.Series, verbose: bool = True):
+def fit_markov3(
+    returns: pd.Series,
+    verbose: bool = True,
+    vix: pd.Series = None,
+):
     """
     Fit multivariate HMM (k=3) on returns and return FILTERED probabilities.
 
@@ -285,6 +302,12 @@ def fit_markov3(returns: pd.Series, verbose: bool = True):
         CRISIS   → state with lowest  mean ret_20d
         CHOPPY   → remainder
 
+    Args:
+        returns : daily log returns
+        verbose : print regime characteristics and transition matrix
+        vix     : optional VIX level series; when supplied adds a 6th feature
+                  to the observation vector (forward-looking implied vol)
+
     Returns:
         mom_prob    : P(momentum), pd.Series on returns.index
         crisis_prob : P(crisis),   pd.Series on returns.index
@@ -292,7 +315,7 @@ def fit_markov3(returns: pd.Series, verbose: bool = True):
         trans_info  : dict with transition matrix, expected durations, regime stats
     """
     # Build and clean features
-    feats      = _build_features(returns)
+    feats      = _build_features(returns, vix=vix)
     feats_clean = feats.dropna()
     idx_clean  = feats_clean.index
 
@@ -347,7 +370,8 @@ def fit_markov3(returns: pd.Series, verbose: bool = True):
         )
 
     if verbose:
-        print("\n  Markov k=3 regime characteristics (5-feature multivariate HMM):")
+        n_feats = len(feats_clean.columns)
+        print(f"\n  Markov k=3 regime characteristics ({n_feats}-feature multivariate HMM):")
         for name, s in regime_stats.items():
             print(f"    {name:10s}  mean = {s['mean']*100:+.3f}%/day   vol = {s['vol']*100:.0f}% ann.")
 
@@ -405,6 +429,7 @@ def fit_markov3(returns: pd.Series, verbose: bool = True):
 def fit_and_filter_markov(
     train_ret: pd.Series,
     test_ret: pd.Series,
+    vix: pd.Series = None,
 ) -> tuple:
     """
     Fit multivariate HMM on train_ret, forward-filter on test_ret.
@@ -420,13 +445,17 @@ def fit_and_filter_markov(
     Args:
         train_ret : training slice daily log returns
         test_ret  : test slice daily log returns
+        vix       : optional full VIX level series; when supplied adds a 6th
+                    feature to the observation vector. Reindexed to each
+                    feature date automatically — pass the full series and let
+                    reindex handle slicing.
 
     Returns:
         (mom_prob, crisis_prob) as pd.Series aligned to test_ret.index
         (NaN where test features could not be computed).
     """
     # ── Train: features, scaler, HMM ──────────────────────────────────
-    train_feats = _build_features(train_ret).dropna()
+    train_feats = _build_features(train_ret, vix=vix).dropna()
     if len(train_feats) < 50:
         raise ValueError(f"Insufficient clean train observations: {len(train_feats)}")
 
@@ -441,7 +470,7 @@ def fit_and_filter_markov(
 
     # ── Test: features with warm-up history, same scaler ──────────────
     warmup     = train_ret.iloc[-250:]   # last ~1yr of train for rolling init
-    test_feats = _build_features(test_ret, warmup=warmup)
+    test_feats = _build_features(test_ret, warmup=warmup, vix=vix)
     test_clean = test_feats.dropna()
 
     if len(test_clean) == 0:

@@ -37,6 +37,7 @@ def walk_forward(
     test_size: int = 63,   # ~1 quarter of trading days
     geo_directional: bool = False,
     use_kalman: bool = False,
+    vix: pd.Series = None,
 ) -> tuple:
     """
     Walk-forward OOS validation of the ensemble signal.
@@ -85,7 +86,7 @@ def walk_forward(
 
         # ── Markov: train-only fit, forward-filter on test ─────────────
         try:
-            mom_prob_test, crisis_prob_test = fit_and_filter_markov(train_ret, test_ret)
+            mom_prob_test, crisis_prob_test = fit_and_filter_markov(train_ret, test_ret, vix=vix)
         except Exception as e:
             print(f"    Markov fit failed: {e} — using geometric only")
             mom_prob_test    = pd.Series(geo_test.values * 0.5, index=test_ret.index)
