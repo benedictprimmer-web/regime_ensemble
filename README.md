@@ -99,7 +99,7 @@ Start with the overview. The technical and research reports build on it.
 | [v6 Technical (3 pages)](docs/SPY_v6_report.pdf) | `generate_report_v6.py` | Vol-ratio dampening, multi-scale geometric, expanding-window OOS |
 | [v7 Research (2 pages)](docs/SPY_v7_research_report.pdf) | `generate_report_v7.py` | Directional geometric and continuous sizing — both underperform, with analysis of why |
 | [v8 Research (2 pages)](docs/SPY_v8_report.pdf) | `generate_report_v8.py` | Kalman drift filter — Q≈0 finding, why daily Kalman underperforms |
-| [v9 Volatility Research (3 pages)](docs/SPY_v9_vol_report copy.pdf) | `generate_report_v9.py` | VIX/VVIX/gamma-proxy extensions and ablations; current active research direction |
+| [v9 Volatility Research (3 pages)](docs/SPY_v9_vol_report%20copy.pdf) | `generate_report_v9.py` | VIX/VVIX/gamma-proxy extensions and ablations; current active research direction |
 | [Paul Refinements v2](docs/Paul_refinement_pdf_V2.pdf) | `generate_report_paul_refinements_v2.py` | Cleaned presentation + diagnostics for communicating model behavior and decisions |
 | [v4/v5 Changes](docs/v4v5_changes_report.pdf) | `generate_report_v4v5.py` | Half-position mixed regime, persistence filter, walk-forward OOS |
 
