@@ -8,3 +8,4 @@ __pycache__/
 .claude/
 
 potential_improvements/*.pdf
+world_cup_predictor/
