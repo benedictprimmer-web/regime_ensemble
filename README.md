@@ -36,12 +36,13 @@ SPY · 2000–2025 · zero transaction costs · 1-day execution lag · **v5 core
 |---|---|---|
 | CAGR | +5.7% | **+8.6%** |
 | Sharpe Ratio | **0.68** | 0.44 |
+| Sharpe Ratio, refit each year (out of sample, rerun 8 Nov 2026) | **0.54** | 0.43 |
 | Max Drawdown | **-16.7%** | -56.5% |
 | T-stat (p-value) | 3.13 (p=0.002) | 2.02 (p=0.043) |
 
 The edge is **risk-adjusted return**, not raw return. The strategy sacrifices CAGR to stay flat during reversion and crisis regimes — the result is a Sharpe 55% higher than buy-and-hold and drawdowns that are 3.4× smaller.
 
-> **These numbers are in-sample** — the Markov model and geometric thresholds are fitted on the full 2000–2025 dataset. For a honest estimate of live performance, run `python3 run.py --expanding --skip-bic` (annual refit, fully out-of-sample). The observed optimism bias is small (~0.03 Sharpe points, per v6 analysis), but the expanding-window number is the one to quote.
+> **These numbers are in-sample** — the Markov model and geometric thresholds are fitted on the full 2000–2025 dataset. For a honest estimate of live performance, run `python3 run.py --expanding --skip-bic` (annual refit, fully out-of-sample). A rerun on 8 Nov 2026 gave 0.65 in-sample and 0.54 refit each year, an optimism bias of 0.11 Sharpe points. The expanding-window number is the one to quote.
 
 **Transaction costs matter.** ~61 position switches/year means costs compound quickly. Sharpe beats B&H to ~12 bps round-trip; strategy breaks even at ~17 bps. Use `--min-hold 3` to cut switches and extend the profitable range.
 
@@ -208,7 +209,7 @@ The core strategy is **v5**. Versions 6, 7, and 8 are research iterations that e
 ### v6.0
 - **Vol ratio dampening** (`--vol-signal`) — 5-day / 63-day realised vol ratio suppresses Markov momentum signal when short-term vol exceeds 2× baseline. Active ~11% of days. Endogenous, orthogonal to existing signals.
 - **Multi-scale geometric** (`--multi-scale`) — averages straightness ratio across 5, 15, and 30-day windows before thresholding. More robust across volatility regimes.
-- **Expanding-window honest backtest** (`--expanding`) — refits geometric thresholds and Markov model annually on all data up to that date. Optimism bias vs in-sample = 0.03 Sharpe points (small gap).
+- **Expanding-window honest backtest** (`--expanding`) — refits geometric thresholds and Markov model annually on all data up to that date. Optimism bias vs in-sample = 0.11 Sharpe points on the 8 Nov 2026 rerun (0.65 v 0.54).
 
 ### v5.0
 - Walk-forward OOS equity curve (`--walkforward`) — 10-fold stitched continuous OOS curve.
